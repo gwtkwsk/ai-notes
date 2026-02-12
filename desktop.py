@@ -1,7 +1,15 @@
+import logging
 import sys
 
 
 def _run() -> int:
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        stream=sys.stdout
+    )
+    
     try:
         from app.desktop.main import main
     except ModuleNotFoundError as exc:

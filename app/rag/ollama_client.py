@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import urllib.error
 import urllib.request
 from typing import Generator, List
+
+logger = logging.getLogger(__name__)
 
 
 class OllamaClient:
@@ -17,15 +20,39 @@ class OllamaClient:
         data = self._post_json("/api/embeddings", payload)
         return data.get("embedding", [])
 
-    def generate(self, prompt: str) -> str:
-        payload = {"model": self._llm_model, "prompt": prompt, "stream": False}
+    def generate(self, prompt: str, system: str = None) -> str:
+        payload = {
+            "model": self._llm_model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.7,
+                "num_predict": 2048,
+            }
+        }
+        if system:
+            payload["system"] = system
         data = self._post_json("/api/generate", payload)
         return data.get("response", "")
 
-    def generate_stream(self, prompt: str) -> Generator[str, None, None]:
-        payload = {"model": self._llm_model, "prompt": prompt, "stream": True}
+    def generate_stream(self, prompt: str, system: str = None) -> Generator[str, None, None]:
+        payload = {
+            "model": self._llm_model,
+            "prompt": prompt,
+            "stream": True,
+            "options": {
+                "temperature": 0.7,
+                "num_predict": 2048,
+            }
+        }
+        if system:
+            payload["system"] = system
         url = f"{self._base_url}/api/generate"
         body = json.dumps(payload).encode("utf-8")
+        logger.info(f"Starting stream generation with model: {self._llm_model}")
+        logger.debug(f"Prompt: {prompt[:200]}...")  # Log first 200 chars of prompt
+        
+        full_response = []  # Collect full response for logging
         request = urllib.request.Request(
             url, data=body, headers={"Content-Type": "application/json"}, method="POST"
         )
@@ -39,12 +66,18 @@ class OllamaClient:
                     continue
                 data = json.loads(raw)
                 if data.get("error"):
+                    logger.error(f"Ollama error: {data['error']}")
                     raise RuntimeError(data["error"])
                 chunk = data.get("response", "")
                 if chunk:
+                    full_response.append(chunk)
                     yield chunk
                 if data.get("done") is True:
                     break
+        
+        complete_response = "".join(full_response)
+        logger.info(f"Stream generation complete. Total length: {len(complete_response)} chars")
+        logger.info(f"Full model response:\n{complete_response}")
 
     def check_connection(self) -> tuple[bool, str]:
         """Check if Ollama server is accessible.

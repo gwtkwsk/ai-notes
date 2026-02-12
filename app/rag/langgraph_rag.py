@@ -6,6 +6,7 @@ from langgraph.graph import END, StateGraph
 
 from app.rag.index import RagIndex
 from app.rag.ollama_client import OllamaClient
+from app.rag.prompts import build_prompt, format_contexts
 
 
 class RagState(TypedDict):
@@ -23,9 +24,9 @@ def build_graph(index: RagIndex, client: OllamaClient):
 
     def generate(state: RagState) -> RagState:
         contexts = state.get("contexts", [])
-        context_text = _format_contexts(contexts)
-        prompt = _build_prompt(context_text, state["question"])
-        answer = client.generate(prompt)
+        context_text = format_contexts(contexts)
+        system, user_prompt = build_prompt(context_text, state["question"])
+        answer = client.generate(user_prompt, system=system)
         return {"question": state["question"], "contexts": contexts, "answer": answer}
 
     graph.add_node("retrieve", retrieve)
@@ -35,24 +36,3 @@ def build_graph(index: RagIndex, client: OllamaClient):
     graph.add_edge("generate", END)
 
     return graph.compile()
-
-
-def _build_prompt(contexts: str, question: str) -> str:
-    return (
-        "Jestes asystentem odpowiadajacym na pytania na podstawie notatek. "
-        "Jesli odpowiedz nie wynika z notatek, powiedz wprost, ze nie masz informacji. "
-        "Odpowiadaj zwięźle, po polsku.\n\n"
-        f"Notatki:\n{contexts}\n\n"
-        f"Pytanie: {question}\n"
-        "Odpowiedz:"
-    )
-
-
-def _format_contexts(contexts: List[Dict]) -> str:
-    parts = []
-    for idx, note in enumerate(contexts, start=1):
-        title = note.get("title", "Untitled")
-        content = note.get("content", "")
-        content = content[:2000]
-        parts.append(f"[{idx}] {title}\n{content}")
-    return "\n\n".join(parts)
