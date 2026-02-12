@@ -95,9 +95,14 @@ class NotesWindow(Adw.ApplicationWindow):
         hamburger.set_tooltip_text("Menu")
         
         menu = Gio.Menu()
+        menu.append("Re-index Notes", "win.reindex")
         menu.append("Preferences", "win.preferences")
         menu.append("Keyboard Shortcuts", "win.show-help-overlay")
         hamburger.set_menu_model(menu)
+        
+        reindex_action = Gio.SimpleAction.new("reindex", None)
+        reindex_action.connect("activate", lambda *_: self._start_reindex())
+        self.add_action(reindex_action)
         
         pref_action = Gio.SimpleAction.new("preferences", None)
         pref_action.connect("activate", self._on_preferences_clicked)
@@ -1104,6 +1109,7 @@ class AskDialog(Adw.Window):
         self._rag = rag_service
         self._running = False
         self._cancel = threading.Event()
+        self._pulse_id = None
 
         self.set_transient_for(parent)
         self.set_modal(True)
@@ -1112,51 +1118,51 @@ class AskDialog(Adw.Window):
 
         tv = Adw.ToolbarView()
         header = Adw.HeaderBar()
+        tv.add_top_bar(header)
         
-        # Ask button in headerbar (suggested action)
+        # Progress bar with OSD style (attached to top, right below header)
+        self._progress = Gtk.ProgressBar()
+        self._progress.add_css_class("osd")
+        self._progress.set_visible(False)
+        tv.add_top_bar(self._progress)
+        
+        # Query toolbar with linked controls
+        query_toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        query_toolbar.add_css_class("toolbar")
+        query_toolbar.set_margin_top(6)
+        query_toolbar.set_margin_bottom(6)
+        query_toolbar.set_margin_start(6)
+        query_toolbar.set_margin_end(6)
+        
+        # Linked controls: Entry | Ask | Cancel
+        linked_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        linked_box.add_css_class("linked")
+        linked_box.set_hexpand(True)
+        
+        self._entry = Gtk.Entry()
+        self._entry.set_placeholder_text("Ask a question about your notes\u2026")
+        self._entry.connect("activate", self._on_ask)
+        self._entry.set_hexpand(True)
+        linked_box.append(self._entry)
+        
         self._ask_btn = Gtk.Button(label="Ask")
         self._ask_btn.add_css_class("suggested-action")
         self._ask_btn.connect("clicked", self._on_ask)
-        header.pack_end(self._ask_btn)
+        linked_box.append(self._ask_btn)
         
-        # Cancel button in headerbar
         self._cancel_btn = Gtk.Button(label="Cancel")
         self._cancel_btn.set_sensitive(False)
         self._cancel_btn.connect("clicked", self._on_cancel)
-        header.pack_end(self._cancel_btn)
+        linked_box.append(self._cancel_btn)
         
-        tv.add_top_bar(header)
+        query_toolbar.append(linked_box)
+        tv.add_top_bar(query_toolbar)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         box.set_margin_top(16)
         box.set_margin_bottom(16)
         box.set_margin_start(16)
         box.set_margin_end(16)
-
-        self._entry = Gtk.Entry()
-        self._entry.set_placeholder_text("Ask a question about your notes\u2026")
-        self._entry.connect("activate", self._on_ask)
-        box.append(self._entry)
-
-        # Status and re-index button
-        status_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self._status = Gtk.Label(label="Ready")
-        self._status.set_xalign(0)
-        self._status.set_hexpand(True)
-        self._status.add_css_class("dimmed")
-        status_box.append(self._status)
-        
-        self._reindex_btn = Gtk.Button(label="Re-index")
-        self._reindex_btn.connect("clicked", self._on_reindex)
-        status_box.append(self._reindex_btn)
-        box.append(status_box)
-
-        self._sources = Gtk.Label(label="")
-        self._sources.set_xalign(0)
-        self._sources.set_wrap(True)
-        self._sources.set_selectable(True)
-        self._sources.add_css_class("caption")
-        box.append(self._sources)
 
         answer_scroll = Gtk.ScrolledWindow()
         answer_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
@@ -1168,46 +1174,33 @@ class AskDialog(Adw.Window):
         answer_scroll.set_child(self._answer)
         box.append(answer_scroll)
 
-        exp = Gtk.Expander(label="Model reasoning")
-        exp.set_expanded(False)
-        think_scroll = Gtk.ScrolledWindow()
-        think_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        think_scroll.set_min_content_height(100)
-        self._thinking = Gtk.TextView()
-        self._thinking.set_editable(False)
-        self._thinking.set_cursor_visible(False)
-        self._thinking.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        self._thinking.set_monospace(True)
-        think_scroll.set_child(self._thinking)
-        exp.set_child(think_scroll)
-        box.append(exp)
-
         tv.set_content(box)
         self.set_content(tv)
 
     def _on_ask(self, *_a: object) -> None:
         if self._rag is None:
-            self._status.set_text("RAG not available")
             return
         q = self._entry.get_text().strip()
         if not q or self._running:
             return
         self._answer.get_buffer().set_text("")
-        self._thinking.get_buffer().set_text("")
-        self._sources.set_text("")
-        self._status.set_text("Running\u2026")
+        self._progress.set_visible(True)
+        self._progress.pulse()
+        self._pulse_id = GLib.timeout_add(100, self._pulse_progress)
         self._running = True
         self._cancel.clear()
         self._ask_btn.set_sensitive(False)
         self._cancel_btn.set_sensitive(True)
         threading.Thread(target=self._worker, args=(q,), daemon=True).start()
 
+    def _pulse_progress(self) -> bool:
+        if self._running:
+            self._progress.pulse()
+            return True
+        return False
+
     def _on_cancel(self, *_a: object) -> None:
         self._cancel.set()
-
-    def _on_reindex(self, *_a: object) -> None:
-        self._parent._start_reindex()
-        self._status.set_text("Re-indexing\u2026")
 
     def _worker(self, question: str) -> None:
         assert self._rag is not None
@@ -1222,32 +1215,33 @@ class AskDialog(Adw.Window):
             rag.close()
 
     def _apply(self, c: dict) -> bool:
-        s = str(c.get("status", "")).strip()
-        if s:
-            self._status.set_text(s)
+        # Stream both thinking and answer to the same buffer
         td = str(c.get("thinking_delta", ""))
-        if td:
-            b = self._thinking.get_buffer()
-            b.insert(b.get_end_iter(), td)
         ad = str(c.get("answer_delta", ""))
-        if ad:
+        if td or ad:
             b = self._answer.get_buffer()
-            b.insert(b.get_end_iter(), ad)
-        sources = c.get("sources") or []
-        if sources:
-            self._sources.set_text("Sources: " + ", ".join(str(x) for x in sources))
+            if td:
+                b.insert(b.get_end_iter(), td)
+            if ad:
+                b.insert(b.get_end_iter(), ad)
         if c.get("done"):
-            self._status.set_text("Cancelled" if c.get("cancelled") else "Done")
+            self._progress.set_visible(False)
         return False
 
     def _done(self) -> bool:
         self._running = False
+        self._progress.set_visible(False)
+        if self._pulse_id is not None:
+            GLib.source_remove(self._pulse_id)
+            self._pulse_id = None
         self._ask_btn.set_sensitive(True)
         self._cancel_btn.set_sensitive(False)
         return False
 
     def _err(self, msg: str) -> bool:
-        self._status.set_text(f"Error: {msg}")
+        self._progress.set_visible(False)
+        b = self._answer.get_buffer()
+        b.set_text(f"Error: {msg}")
         self._done()
         return False
 

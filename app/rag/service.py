@@ -43,68 +43,27 @@ class RagService:
         return {"answer": answer, "thinking": thinking, "sources": sources[:self._config.top_k]}
 
     def ask_stream(self, question: str, cancel_cb=None, status_cb=None):
-        status_updates: list[str] = []
-
-        def status_proxy(message: str) -> None:
-            status_updates.append(message)
-            if status_cb is not None:
-                status_cb(message)
-
-        contexts = self._index.query(question, status_cb=status_proxy)
-        sources = [note.get("title", "Untitled") for note in contexts][:self._config.top_k]
-        if status_updates:
-            for message in status_updates:
-                yield {
-                    "status": message,
-                    "answer_delta": "",
-                    "thinking_delta": "",
-                    "sources": sources,
-                    "done": False,
-                }
+        contexts = self._index.query(question, status_cb=status_cb)
         prompt = _build_prompt(_format_contexts(contexts), question)
-        pending = ""
-        in_think = False
-        if status_cb is not None:
-            status_cb("Querying Ollama")
-        yield {
-            "status": "Querying Ollama",
-            "answer_delta": "",
-            "thinking_delta": "",
-            "sources": sources,
-            "done": False,
-        }
+        
         for chunk in self._client.generate_stream(prompt):
             if cancel_cb is not None and cancel_cb():
                 yield {
                     "answer_delta": "",
                     "thinking_delta": "",
-                    "sources": sources,
                     "done": True,
                     "cancelled": True,
                 }
                 return
-            pending += chunk
-            thinking_delta, answer_delta, in_think, pending = _extract_deltas(pending, in_think)
-            if thinking_delta or answer_delta:
-                yield {
-                    "answer_delta": answer_delta,
-                    "thinking_delta": thinking_delta,
-                    "sources": sources,
-                    "done": False,
-                }
-        if pending:
-            thinking_delta, answer_delta, in_think, _ = _extract_deltas(pending, in_think)
-            if thinking_delta or answer_delta:
-                yield {
-                    "answer_delta": answer_delta,
-                    "thinking_delta": thinking_delta,
-                    "sources": sources,
-                    "done": False,
-                }
+            yield {
+                "answer_delta": chunk,
+                "thinking_delta": "",
+                "done": False,
+            }
+        
         yield {
             "answer_delta": "",
             "thinking_delta": "",
-            "sources": sources,
             "done": True,
         }
 
@@ -133,7 +92,7 @@ def _build_prompt(contexts: str, question: str) -> str:
         "Jesli odpowiedz nie wynika z notatek, powiedz wprost, ze nie masz informacji. "
         "Odpowiadaj zwięźle, po polsku.\n\n"
         f"Notatki:\n{contexts}\n\n"
-        f"Pytanie: {question}\n"
+        f"Pytanie: {question}\n\n"
         "Odpowiedz:"
     )
 
@@ -163,16 +122,26 @@ def _split_thinking_stream(text: str) -> tuple[str, str, bool]:
     return thinking.strip(), answer.strip(), False
 
 
-def _extract_deltas(text: str, in_think: bool) -> tuple[str, str, bool, str]:
+def _extract_deltas(text: str, in_think: bool, flush: bool = False) -> tuple[str, str, bool, str]:
     thinking_delta = ""
     answer_delta = ""
     lower = text.lower()
+    tail_keep = max(len("<think>"), len("</think>")) - 1
+    
     while text:
         if not in_think:
             idx = lower.find("<think>")
             if idx == -1:
-                answer_delta += text
-                text = ""
+                # No tag found
+                if flush:
+                    # Flush mode: send everything
+                    answer_delta += text
+                    text = ""
+                else:
+                    # Keep last tail_keep chars as buffer
+                    if len(text) > tail_keep:
+                        answer_delta += text[:-tail_keep]
+                        text = text[-tail_keep:]
                 break
             answer_delta += text[:idx]
             text = text[idx + len("<think>") :]
@@ -181,15 +150,20 @@ def _extract_deltas(text: str, in_think: bool) -> tuple[str, str, bool, str]:
         else:
             idx = lower.find("</think>")
             if idx == -1:
-                thinking_delta += text
-                text = ""
+                # No closing tag found
+                if flush:
+                    # Flush mode: send everything
+                    thinking_delta += text
+                    text = ""
+                else:
+                    # Keep last tail_keep chars as buffer
+                    if len(text) > tail_keep:
+                        thinking_delta += text[:-tail_keep]
+                        text = text[-tail_keep:]
                 break
             thinking_delta += text[:idx]
             text = text[idx + len("</think>") :]
             lower = text.lower()
             in_think = False
 
-    tail_keep = max(len("<think>"), len("</think>")) - 1
-    if len(text) > tail_keep:
-        text = text[-tail_keep:]
     return thinking_delta, answer_delta, in_think, text
