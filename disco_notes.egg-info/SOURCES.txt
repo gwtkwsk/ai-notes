@@ -1,12 +1,14 @@
 README.md
 pyproject.toml
 app/__init__.py
+app/config.py
 app/data/__init__.py
 app/data/repository.py
 app/data/schema.py
 app/desktop/__init__.py
 app/desktop/main.py
 app/desktop/markdown_preview.py
+app/desktop/preferences.py
 app/rag/__init__.py
 app/rag/config.py
 app/rag/index.py

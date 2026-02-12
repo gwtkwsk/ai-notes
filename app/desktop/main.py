@@ -9,14 +9,17 @@ from typing import Optional
 
 import gi
 
+from app.config import Config
 from app.data.repository import Repository
 from app.desktop.markdown_preview import MarkdownPreview
+from app.desktop.preferences import PreferencesWindow
 from app.rag.service import RagService
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
+gi.require_version("Gdk", "4.0")
 
-from gi.repository import Adw, Gio, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 _CSS = """\
 .pill {
@@ -51,10 +54,12 @@ class NotesWindow(Adw.ApplicationWindow):
         self,
         app: Adw.Application,
         repo: Repository,
+        config: Config,
         rag_service: Optional[RagService] = None,
     ) -> None:
         super().__init__(application=app)
         self._repo = repo
+        self._config = config
         self._rag_service = rag_service
 
         # state
@@ -74,10 +79,9 @@ class NotesWindow(Adw.ApplicationWindow):
         self._toast_overlay = Adw.ToastOverlay()
         self.set_content(self._toast_overlay)
 
-        # Main paned: sidebar | content
-        paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        paned.set_wide_handle(True)
-        self._toast_overlay.set_child(paned)
+        # Main container: sidebar | content
+        main_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self._toast_overlay.set_child(main_box)
 
         # --- Sidebar ---
         sidebar_tv = Adw.ToolbarView()
@@ -86,8 +90,20 @@ class NotesWindow(Adw.ApplicationWindow):
         sidebar_hb.set_title_widget(
             Adw.WindowTitle(title="Categories", subtitle="")
         )
-        hamburger = Gtk.Button(icon_name="open-menu-symbolic")
+        
+        # Hamburger menu
+        hamburger = Gtk.MenuButton(icon_name="open-menu-symbolic")
         hamburger.set_tooltip_text("Menu")
+        
+        menu = Gio.Menu()
+        menu.append("Preferences", "win.preferences")
+        menu.append("Keyboard Shortcuts", "win.show-help-overlay")
+        hamburger.set_menu_model(menu)
+        
+        pref_action = Gio.SimpleAction.new("preferences", None)
+        pref_action.connect("activate", self._on_preferences_clicked)
+        self.add_action(pref_action)
+        
         sidebar_hb.pack_end(hamburger)
         sidebar_tv.add_top_bar(sidebar_hb)
 
@@ -105,7 +121,13 @@ class NotesWindow(Adw.ApplicationWindow):
         )
         sidebar_scroll.set_child(self._categories_list)
         sidebar_tv.set_content(sidebar_scroll)
-        paned.set_start_child(sidebar_tv)
+        
+        # Sidebar container with separator
+        sidebar_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        sidebar_box.append(sidebar_tv)
+        separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        sidebar_box.append(separator)
+        main_box.append(sidebar_box)
 
         # --- Content area ---
         content_tv = Adw.ToolbarView()
@@ -253,7 +275,8 @@ class NotesWindow(Adw.ApplicationWindow):
         self._content_stack.add_named(editor_outer, "editor")
 
         content_tv.set_content(self._content_stack)
-        paned.set_end_child(content_tv)
+        content_tv.set_hexpand(True)
+        main_box.append(content_tv)
 
         # --- Initial load ---
         self._reload_sidebar()
@@ -427,6 +450,14 @@ class NotesWindow(Adw.ApplicationWindow):
             box.append(name_lbl)
             box.append(count_lbl)
             row.set_child(box)
+            
+            # Add right-click menu for tags
+            if ftype == "tag":
+                gesture = Gtk.GestureClick.new()
+                gesture.set_button(3)  # Right mouse button
+                gesture.connect("pressed", self._on_tag_right_click, tid, label)
+                row.add_controller(gesture)
+            
             self._categories_list.append(row)
 
             if ftype == "all" and not self._without_labels_filter and self._selected_tag_id is None:
@@ -440,6 +471,145 @@ class NotesWindow(Adw.ApplicationWindow):
             self._categories_list.select_row(row_to_select)
 
         self._syncing_sidebar = False
+
+    def _on_tag_right_click(
+        self,
+        _gesture: Gtk.GestureClick,
+        _n_press: int,
+        x: float,
+        y: float,
+        tag_id: int,
+        tag_name: str,
+    ) -> None:
+        """Show context menu for tag."""
+        popover = Gtk.PopoverMenu()
+        
+        menu = Gio.Menu()
+        menu.append("Rename Tag", f"win.rename-tag-{tag_id}")
+        menu.append("Delete Tag", f"win.delete-tag-{tag_id}")
+        popover.set_menu_model(menu)
+        
+        # Create actions for this specific tag
+        rename_action = Gio.SimpleAction.new(f"rename-tag-{tag_id}", None)
+        rename_action.connect("activate", lambda *_: self._on_rename_tag_clicked(tag_id, tag_name))
+        self.add_action(rename_action)
+        
+        delete_action = Gio.SimpleAction.new(f"delete-tag-{tag_id}", None)
+        delete_action.connect("activate", lambda *_: self._on_delete_tag_clicked(tag_id, tag_name))
+        self.add_action(delete_action)
+        
+        # Position popover at click location
+        rect = Gdk.Rectangle()
+        rect.x = int(x)
+        rect.y = int(y)
+        rect.width = 1
+        rect.height = 1
+        popover.set_pointing_to(rect)
+        popover.set_parent(_gesture.get_widget())
+        popover.popup()
+
+    def _on_rename_tag_clicked(self, tag_id: int, tag_name: str) -> None:
+        """Show dialog to rename tag."""
+        dialog = Adw.MessageDialog.new(self)
+        dialog.set_heading(f"Rename tag \"{tag_name}\"")
+        dialog.set_body("Enter a new name for this tag:")
+        
+        # Create entry for new name
+        entry = Gtk.Entry()
+        entry.set_text(tag_name)
+        entry.set_margin_top(12)
+        entry.set_margin_bottom(12)
+        entry.set_margin_start(12)
+        entry.set_margin_end(12)
+        
+        # Add entry to dialog's extra child
+        dialog.set_extra_child(entry)
+        
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("rename", "Rename")
+        dialog.set_response_appearance("rename", Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response("rename")
+        dialog.set_close_response("cancel")
+        
+        dialog.connect("response", lambda d, r: self._on_confirm_rename_tag(r, tag_id, entry.get_text()))
+        
+        # Select all text for easy replacement
+        entry.grab_focus()
+        entry.select_region(0, -1)
+        
+        dialog.present()
+
+    def _on_confirm_rename_tag(self, response: str, tag_id: int, new_name: str) -> None:
+        """Handle tag rename confirmation."""
+        if response == "rename":
+            self._rename_tag(tag_id, new_name)
+
+    def _rename_tag(self, tag_id: int, new_name: str) -> None:
+        """Actually rename the tag."""
+        new_name = new_name.strip()
+        if not new_name:
+            self._toast("Tag name cannot be empty")
+            return
+        
+        try:
+            self._repo.rename_tag(tag_id, new_name)
+            self._toast(f"Renamed tag to \"{new_name}\"")
+            
+            # Update selected filter name if this tag is currently selected
+            if self._selected_tag_id == tag_id:
+                self._selected_filter_name = new_name
+                self._set_mode(self._content_stack.get_visible_child_name())
+            
+            self._reload_sidebar()
+        except ValueError as exc:
+            self._toast(str(exc))
+        except Exception as exc:
+            self._toast(f"Error renaming tag: {exc}")
+
+    def _on_delete_tag_clicked(self, tag_id: int, tag_name: str) -> None:
+        """Delete a tag with confirmation."""
+        usage_count = self._repo.get_tag_usage_count(tag_id)
+        
+        if usage_count > 0:
+            # Show confirmation dialog
+            dialog = Adw.MessageDialog.new(self)
+            dialog.set_heading(f"Delete tag \"{tag_name}\"?")
+            dialog.set_body(
+                f"This tag is used by {usage_count} note(s). "
+                "Deleting it will remove the tag from all notes."
+            )
+            dialog.add_response("cancel", "Cancel")
+            dialog.add_response("delete", "Delete")
+            dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+            dialog.set_default_response("cancel")
+            dialog.set_close_response("cancel")
+            dialog.connect("response", lambda d, r: self._on_confirm_delete_tag(r, tag_id, tag_name))
+            dialog.present()
+        else:
+            # Delete without confirmation if not used
+            self._delete_tag(tag_id, tag_name)
+
+    def _on_confirm_delete_tag(self, response: str, tag_id: int, tag_name: str) -> None:
+        """Handle tag deletion confirmation."""
+        if response == "delete":
+            self._delete_tag(tag_id, tag_name)
+
+    def _delete_tag(self, tag_id: int, tag_name: str) -> None:
+        """Actually delete the tag."""
+        try:
+            self._repo.delete_tag(tag_id)
+            self._toast(f"Deleted tag \"{tag_name}\"")
+            
+            # If this was the selected tag, switch to "All Notes"
+            if self._selected_tag_id == tag_id:
+                self._selected_tag_id = None
+                self._without_labels_filter = False
+                self._selected_filter_name = "All Notes"
+                self._reload_notes_list()
+            
+            self._reload_sidebar()
+        except Exception as exc:
+            self._toast(f"Error deleting tag: {exc}")
 
     def _on_category_selected(
         self, _lb: Gtk.ListBox, row: Optional[Gtk.ListBoxRow]
@@ -782,6 +952,22 @@ class NotesWindow(Adw.ApplicationWindow):
             box.remove(child)
             child = nxt
 
+    # -- Preferences --
+
+    def _on_preferences_clicked(self, _action: Gio.SimpleAction, _param: None) -> None:
+        dlg = PreferencesWindow(self, self._config, on_save=self._on_config_saved)
+        dlg.present()
+
+    def _on_config_saved(self) -> None:
+        """Called when preferences are saved. Recreate RAG service with new config."""
+        try:
+            if self._rag_service is not None:
+                self._rag_service.close()
+            self._rag_service = RagService(self._repo, self._config)
+            GLib.idle_add(lambda: (self._toast("Preferences saved"), False))
+        except Exception as exc:
+            GLib.idle_add(lambda: (self._toast(f"Error reloading RAG service: {exc}"), False))
+
     # -- RAG --
 
     def _on_open_ask_clicked(self, _btn: Gtk.Button) -> None:
@@ -979,16 +1165,20 @@ class DesktopApplication(Adw.Application):
             application_id="pl.disconotes.app",
             flags=Gio.ApplicationFlags.FLAGS_NONE,
         )
+        self._config: Optional[Config] = None
         self._repo: Optional[Repository] = None
         self._rag_service: Optional[RagService] = None
         self._window: Optional[NotesWindow] = None
 
     def do_activate(self) -> None:
         if self._window is None:
+            self._config = Config()
             db_path = os.getenv("DISCO_NOTES_DB", _default_db_path())
             self._repo = Repository(db_path)
-            self._rag_service = RagService(self._repo)
-            self._window = NotesWindow(self, self._repo, self._rag_service)
+            self._rag_service = RagService(self._repo, self._config)
+            self._window = NotesWindow(
+                self, self._repo, self._config, self._rag_service
+            )
         self._window.present()
 
     def do_shutdown(self) -> None:

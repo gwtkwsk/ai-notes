@@ -1,18 +1,25 @@
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import TYPE_CHECKING, Dict, List
 
 from app.data.repository import Repository
-from app.rag.config import EMBED_MODEL, LLM_MODEL, OLLAMA_BASE_URL, TOP_K
 from app.rag.index import RagIndex
 from app.rag.ollama_client import OllamaClient
 
+if TYPE_CHECKING:
+    from app.config import Config
+
 
 class RagService:
-    def __init__(self, repo: Repository) -> None:
+    def __init__(self, repo: Repository, config: Config) -> None:
         self._repo = repo
         self._db_path = repo.db_path
-        self._client = OllamaClient(OLLAMA_BASE_URL, EMBED_MODEL, LLM_MODEL)
+        self._config = config
+        self._client = OllamaClient(
+            config.ollama_base_url,
+            config.embed_model,
+            config.llm_model,
+        )
         self._index = RagIndex(repo, self._client)
         self._graph = None
 
@@ -33,7 +40,7 @@ class RagService:
         state = self._graph.invoke({"question": question})
         sources = [note.get("title", "Untitled") for note in state.get("contexts", [])]
         answer, thinking = _split_thinking(state.get("answer", ""))
-        return {"answer": answer, "thinking": thinking, "sources": sources[:TOP_K]}
+        return {"answer": answer, "thinking": thinking, "sources": sources[:self._config.top_k]}
 
     def ask_stream(self, question: str, cancel_cb=None, status_cb=None):
         status_updates: list[str] = []
@@ -44,7 +51,7 @@ class RagService:
                 status_cb(message)
 
         contexts = self._index.query(question, status_cb=status_proxy)
-        sources = [note.get("title", "Untitled") for note in contexts][:TOP_K]
+        sources = [note.get("title", "Untitled") for note in contexts][:self._config.top_k]
         if status_updates:
             for message in status_updates:
                 yield {
@@ -103,7 +110,7 @@ class RagService:
 
     def clone_for_thread(self) -> "RagService":
         repo = Repository(self._db_path)
-        return RagService(repo)
+        return RagService(repo, self._config)
 
     def close(self) -> None:
         self._repo.close()

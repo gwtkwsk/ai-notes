@@ -152,6 +152,37 @@ class Repository:
         self._conn.commit()
         return bool(new_val)
 
+    def delete_tag(self, tag_id: int) -> None:
+        """Delete a tag. CASCADE will automatically remove note_tags entries."""
+        self._conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+        self._conn.commit()
+
+    def rename_tag(self, tag_id: int, new_name: str) -> None:
+        """Rename a tag."""
+        new_name = new_name.strip()
+        if not new_name:
+            raise ValueError("Tag name cannot be empty")
+        
+        # Check if name already exists (case-insensitive)
+        cur = self._conn.execute(
+            "SELECT id FROM tags WHERE LOWER(name) = LOWER(?) AND id != ?",
+            (new_name, tag_id)
+        )
+        if cur.fetchone():
+            raise ValueError(f"Tag '{new_name}' already exists")
+        
+        self._conn.execute("UPDATE tags SET name = ? WHERE id = ?", (new_name, tag_id))
+        self._conn.commit()
+
+    def get_tag_usage_count(self, tag_id: int) -> int:
+        """Return the number of notes using this tag."""
+        cur = self._conn.execute(
+            "SELECT COUNT(*) as cnt FROM note_tags WHERE tag_id = ?",
+            (tag_id,)
+        )
+        row = cur.fetchone()
+        return int(row["cnt"]) if row else 0
+
     def upsert_note_embedding(self, note_id: int, vector_json: str) -> None:
         self._conn.execute(
             """

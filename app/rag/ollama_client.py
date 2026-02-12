@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
 from typing import Generator, List
 
@@ -44,6 +45,24 @@ class OllamaClient:
                     yield chunk
                 if data.get("done") is True:
                     break
+
+    def check_connection(self) -> tuple[bool, str]:
+        """Check if Ollama server is accessible.
+        
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
+        try:
+            url = f"{self._base_url}/api/tags"
+            request = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(request, timeout=5) as response:
+                if response.status == 200:
+                    return True, "Connected successfully"
+                return False, f"Server returned status {response.status}"
+        except urllib.error.URLError as e:
+            return False, f"Connection failed: {e.reason}"
+        except Exception as e:
+            return False, f"Error: {str(e)}"
 
     def _post_json(self, path: str, payload: dict) -> dict:
         url = f"{self._base_url}{path}"
