@@ -1,0 +1,138 @@
+import sqlite3
+from typing import Iterable, List, Optional
+
+from app.data.schema import SCHEMA_SQL
+
+
+class Repository:
+    def __init__(self, db_path: str) -> None:
+        self._db_path = db_path
+        self._conn = sqlite3.connect(db_path)
+        self._conn.row_factory = sqlite3.Row
+        self._init_schema()
+
+    @property
+    def db_path(self) -> str:
+        return self._db_path
+
+    def close(self) -> None:
+        self._conn.close()
+
+    def _init_schema(self) -> None:
+        self._conn.executescript(SCHEMA_SQL)
+        self._conn.commit()
+
+    def create_note(self, title: str, content: str, is_markdown: bool) -> int:
+        cur = self._conn.execute(
+            "INSERT INTO notes(title, content, is_markdown) VALUES (?, ?, ?)",
+            (title, content, 1 if is_markdown else 0),
+        )
+        self._conn.commit()
+        return int(cur.lastrowid)
+
+    def update_note(self, note_id: int, title: str, content: str, is_markdown: bool) -> None:
+        self._conn.execute(
+            """
+            UPDATE notes
+            SET title = ?, content = ?, is_markdown = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (title, content, 1 if is_markdown else 0, note_id),
+        )
+        self._conn.commit()
+
+    def delete_note(self, note_id: int) -> None:
+        self._conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+        self._conn.commit()
+
+    def get_note(self, note_id: int) -> Optional[dict]:
+        cur = self._conn.execute("SELECT * FROM notes WHERE id = ?", (note_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def list_notes(self, filter_tag_ids: Optional[Iterable[int]] = None) -> List[dict]:
+        if filter_tag_ids:
+            ids = list(filter_tag_ids)
+            placeholders = ",".join(["?"] * len(ids))
+            query = f"""
+                SELECT n.*
+                FROM notes n
+                JOIN note_tags nt ON nt.note_id = n.id
+                WHERE nt.tag_id IN ({placeholders})
+                GROUP BY n.id
+                HAVING COUNT(DISTINCT nt.tag_id) = ?
+                ORDER BY n.updated_at DESC
+            """
+            cur = self._conn.execute(query, (*ids, len(ids)))
+        else:
+            cur = self._conn.execute("SELECT * FROM notes ORDER BY updated_at DESC")
+        return [dict(row) for row in cur.fetchall()]
+
+    def list_notes_for_embedding(self) -> List[dict]:
+        cur = self._conn.execute("SELECT id, title, content, is_markdown FROM notes")
+        return [dict(row) for row in cur.fetchall()]
+
+    def list_notes_with_embeddings(self) -> List[dict]:
+        cur = self._conn.execute(
+            """
+            SELECT n.id, n.title, n.content, n.is_markdown, ne.vector_json
+            FROM notes n
+            LEFT JOIN note_embeddings ne ON ne.note_id = n.id
+            """
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+    def list_tags(self) -> List[dict]:
+        cur = self._conn.execute("SELECT * FROM tags ORDER BY name COLLATE NOCASE")
+        return [dict(row) for row in cur.fetchall()]
+
+    def get_note_tags(self, note_id: int) -> List[dict]:
+        cur = self._conn.execute(
+            """
+            SELECT t.*
+            FROM tags t
+            JOIN note_tags nt ON nt.tag_id = t.id
+            WHERE nt.note_id = ?
+            ORDER BY t.name COLLATE NOCASE
+            """,
+            (note_id,),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+    def ensure_tag(self, name: str) -> int:
+        name = name.strip()
+        if not name:
+            raise ValueError("Tag name is empty")
+        cur = self._conn.execute("SELECT id FROM tags WHERE name = ?", (name,))
+        row = cur.fetchone()
+        if row:
+            return int(row["id"])
+        cur = self._conn.execute("INSERT INTO tags(name) VALUES (?)", (name,))
+        self._conn.commit()
+        return int(cur.lastrowid)
+
+    def set_note_tags(self, note_id: int, tag_names: Iterable[str]) -> None:
+        tag_ids = []
+        for name in tag_names:
+            tag_id = self.ensure_tag(name)
+            tag_ids.append(tag_id)
+
+        self._conn.execute("DELETE FROM note_tags WHERE note_id = ?", (note_id,))
+        self._conn.executemany(
+            "INSERT OR IGNORE INTO note_tags(note_id, tag_id) VALUES (?, ?)",
+            [(note_id, tag_id) for tag_id in tag_ids],
+        )
+        self._conn.commit()
+
+    def upsert_note_embedding(self, note_id: int, vector_json: str) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO note_embeddings(note_id, vector_json, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(note_id) DO UPDATE SET
+                vector_json = excluded.vector_json,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (note_id, vector_json),
+        )
+        self._conn.commit()

@@ -1,0 +1,48 @@
+Metadata-Version: 2.4
+Name: disco-notes
+Version: 0.1.0
+Summary: Desktop notes app MVP with Tauri and Python backend.
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.110.0
+Requires-Dist: langgraph>=0.0.40
+Requires-Dist: uvicorn>=0.24.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4; extra == "dev"
+
+# Disco Notes (MVP)
+
+A minimal desktop notes application with a Tauri shell and a Python (FastAPI) backend.
+
+## Features
+
+- Create, view, edit notes in plain text or Markdown
+- Tag notes and filter by multiple tags (AND)
+- Markdown preview mode
+- Local SQLite storage
+
+## Run (dev)
+
+```bash
+uv venv
+source .venv/bin/activate
+uv lock
+uv sync
+cd ui
+npm install
+npm run tauri dev
+```
+
+The Tauri app starts the Python backend automatically. If you want to run the API alone:
+
+```bash
+uv run python main.py
+```
+
+## Tests
+
+```bash
+uv lock
+uv sync --dev
+pytest
+```

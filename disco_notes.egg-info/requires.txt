@@ -1,0 +1,6 @@
+fastapi>=0.110.0
+langgraph>=0.0.40
+uvicorn>=0.24.0
+
+[dev]
+pytest>=7.4
