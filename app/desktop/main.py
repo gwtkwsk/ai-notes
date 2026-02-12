@@ -25,14 +25,13 @@ _CSS = """\
 .pill {
     border: 1px solid alpha(currentColor, 0.25);
     border-radius: 100px;
-    padding: 1px 10px;
+    padding: 2px 8px;
     font-size: 0.85em;
 }
 .blockquote-border {
     background-color: alpha(currentColor, 0.35);
 }
 .formatting-toolbar {
-    border-top: 1px solid alpha(currentColor, 0.12);
 }
 """
 
@@ -88,7 +87,7 @@ class NotesWindow(Adw.ApplicationWindow):
         sidebar_hb = Adw.HeaderBar()
         sidebar_hb.set_show_end_title_buttons(False)
         sidebar_hb.set_title_widget(
-            Adw.WindowTitle(title="Categories", subtitle="")
+            Adw.WindowTitle(title="Labels", subtitle="")
         )
         
         # Hamburger menu
@@ -113,13 +112,13 @@ class NotesWindow(Adw.ApplicationWindow):
         )
         sidebar_scroll.set_size_request(280, -1)
 
-        self._categories_list = Gtk.ListBox()
-        self._categories_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
-        self._categories_list.add_css_class("navigation-sidebar")
-        self._categories_list.connect(
-            "row-selected", self._on_category_selected
+        self._labels_list = Gtk.ListBox()
+        self._labels_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self._labels_list.add_css_class("navigation-sidebar")
+        self._labels_list.connect(
+            "row-selected", self._on_label_selected
         )
-        sidebar_scroll.set_child(self._categories_list)
+        sidebar_scroll.set_child(self._labels_list)
         sidebar_tv.set_content(sidebar_scroll)
         
         # Sidebar container with separator
@@ -155,41 +154,43 @@ class NotesWindow(Adw.ApplicationWindow):
         self._back_button.set_tooltip_text("Back")
         self._back_button.connect("clicked", self._on_back_clicked)
 
-        self._edit_button = Gtk.Button(
-            icon_name="document-edit-symbolic"
-        )
-        self._edit_button.set_tooltip_text("Edit")
-        self._edit_button.connect("clicked", self._on_edit_clicked)
+        # Toggle group for preview/edit (linked group)
+        self._view_toggle_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self._view_toggle_box.add_css_class("linked")
+        
+        self._preview_toggle = Gtk.ToggleButton()
+        self._preview_toggle.set_icon_name("view-reveal-symbolic")
+        self._preview_toggle.set_tooltip_text("Preview")
+        self._preview_toggle.connect("toggled", self._on_preview_toggled)
+        self._view_toggle_box.append(self._preview_toggle)
+        
+        self._edit_toggle = Gtk.ToggleButton()
+        self._edit_toggle.set_icon_name("document-edit-symbolic")
+        self._edit_toggle.set_tooltip_text("Edit")
+        self._edit_toggle.set_group(self._preview_toggle)
+        self._edit_toggle.connect("toggled", self._on_edit_toggled)
+        self._view_toggle_box.append(self._edit_toggle)
 
-        self._preview_button = Gtk.Button(
-            icon_name="view-reveal-symbolic"
-        )
-        self._preview_button.set_tooltip_text("Preview")
-        self._preview_button.connect("clicked", self._on_preview_clicked)
+        # Action buttons group (linked)
+        self._actions_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self._actions_box.add_css_class("linked")
+        
+        self._save_button = Gtk.Button(icon_name="document-save-symbolic")
+        self._save_button.set_tooltip_text("Save")
+        self._save_button.connect("clicked", self._on_save_clicked)
+        self._actions_box.append(self._save_button)
+        
+        self._favourite_button = Gtk.Button(icon_name="starred-symbolic")
+        self._favourite_button.set_tooltip_text("Add to Favourites")
+        self._favourite_button.connect("clicked", self._on_toggle_favourite)
+        self._actions_box.append(self._favourite_button)
+        
+        self._delete_button = Gtk.Button(icon_name="user-trash-symbolic")
+        self._delete_button.set_tooltip_text("Delete Note")
+        self._delete_button.connect("clicked", self._on_delete_clicked)
+        self._actions_box.append(self._delete_button)
 
-        # Three-dot menu
-        self._menu_button = Gtk.MenuButton(
-            icon_name="view-more-symbolic"
-        )
-        self._menu_button.set_tooltip_text("More")
-        self._fav_section = Gio.Menu()
-        self._fav_section.append(
-            "Add to Favourites", "win.toggle-favourite"
-        )
-        del_section = Gio.Menu()
-        del_section.append("Delete", "win.delete-note")
-        menu = Gio.Menu()
-        menu.append_section(None, self._fav_section)
-        menu.append_section(None, del_section)
-        self._menu_button.set_menu_model(menu)
-
-        fav_action = Gio.SimpleAction.new("toggle-favourite", None)
-        fav_action.connect("activate", self._on_toggle_favourite)
-        self.add_action(fav_action)
-
-        del_action = Gio.SimpleAction.new("delete-note", None)
-        del_action.connect("activate", self._on_delete_clicked)
-        self.add_action(del_action)
+        # Actions removed - now using direct button connections
 
         # --- Content stack: list | preview | editor ---
         self._content_stack = Gtk.Stack()
@@ -244,9 +245,16 @@ class NotesWindow(Adw.ApplicationWindow):
         self._title_entry.add_css_class("title-2")
         editor_box.append(self._title_entry)
 
-        self._tags_entry = Gtk.Entry()
-        self._tags_entry.set_placeholder_text("Tags (comma separated)")
-        editor_box.append(self._tags_entry)
+        # Tags toolbar with linked controls
+        self._tags_toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self._tags_toolbar.add_css_class("linked")
+        
+        self._tags_add_entry = Gtk.Entry()
+        self._tags_add_entry.set_placeholder_text("Add label...")
+        self._tags_add_entry.connect("activate", self._on_add_tag)
+        self._tags_toolbar.append(self._tags_add_entry)
+        
+        editor_box.append(self._tags_toolbar)
 
         text_scroll = Gtk.ScrolledWindow()
         text_scroll.set_policy(
@@ -321,8 +329,10 @@ class NotesWindow(Adw.ApplicationWindow):
 
         elif mode == "preview":
             _ps(self._back_button)
-            _pe(self._menu_button)
-            _pe(self._edit_button)
+            _pe(self._actions_box)
+            _pe(self._view_toggle_box)
+            self._preview_toggle.set_active(True)
+            self._save_button.set_visible(False)
             note = (
                 self._repo.get_note(self._current_note_id)
                 if self._current_note_id
@@ -332,28 +342,32 @@ class NotesWindow(Adw.ApplicationWindow):
                 (note.get("title") or "Note") if note else "Note"
             )
             self._window_title.set_subtitle("")
-            self._refresh_fav_label()
+            self._refresh_fav_button()
 
         elif mode == "editor":
             _ps(self._back_button)
-            _pe(self._menu_button)
-            _pe(self._preview_button)
+            _pe(self._actions_box)
+            _pe(self._view_toggle_box)
+            self._edit_toggle.set_active(True)
+            self._save_button.set_visible(True)
             self._window_title.set_title(
                 self._title_entry.get_text().strip() or "New Note"
             )
             self._window_title.set_subtitle("")
-            self._refresh_fav_label()
+            self._refresh_fav_button()
 
-    def _refresh_fav_label(self) -> None:
-        self._fav_section.remove_all()
+    def _refresh_fav_button(self) -> None:
         is_fav = False
         if self._current_note_id:
             note = self._repo.get_note(self._current_note_id)
             is_fav = bool(note and note.get("is_favourite"))
-        label = (
-            "Remove from Favourites" if is_fav else "Add to Favourites"
-        )
-        self._fav_section.append(label, "win.toggle-favourite")
+        
+        if is_fav:
+            self._favourite_button.set_icon_name("starred-symbolic")
+            self._favourite_button.set_tooltip_text("Remove from Favourites")
+        else:
+            self._favourite_button.set_icon_name("non-starred-symbolic")
+            self._favourite_button.set_tooltip_text("Add to Favourites")
 
     # -- Navigation --
 
@@ -364,13 +378,17 @@ class NotesWindow(Adw.ApplicationWindow):
         self._reload_notes_list()
         self._set_mode("list")
 
-    def _on_edit_clicked(self, _btn: Gtk.Button) -> None:
+    def _on_edit_toggled(self, btn: Gtk.ToggleButton) -> None:
+        if not btn.get_active():
+            return
         if self._current_note_id is None:
             return
         self._load_note_into_editor(self._current_note_id)
         self._set_mode("editor")
 
-    def _on_preview_clicked(self, _btn: Gtk.Button) -> None:
+    def _on_preview_toggled(self, btn: Gtk.ToggleButton) -> None:
+        if not btn.get_active():
+            return
         self._auto_save()
         if self._current_note_id is not None:
             note = self._repo.get_note(self._current_note_id)
@@ -378,10 +396,15 @@ class NotesWindow(Adw.ApplicationWindow):
                 self._md_preview.render(note.get("content", ""))
         self._set_mode("preview")
 
+    def _on_save_clicked(self, _btn: Gtk.Button) -> None:
+        """Manually save the current note."""
+        self._auto_save()
+
     def _on_new_clicked(self, _btn: Gtk.Button) -> None:
         self._current_note_id = None
         self._title_entry.set_text("")
-        self._tags_entry.set_text("")
+        self._tags_add_entry.set_text("")
+        self._clear_tag_chips()
         self._content_view.get_buffer().set_text("")
         self._set_mode("editor")
 
@@ -406,23 +429,23 @@ class NotesWindow(Adw.ApplicationWindow):
     def _reload_sidebar(self) -> None:
         self._syncing_sidebar = True
 
-        child = self._categories_list.get_first_child()
+        child = self._labels_list.get_first_child()
         while child is not None:
             nxt = child.get_next_sibling()
-            self._categories_list.remove(child)
+            self._labels_list.remove(child)
             child = nxt
 
         all_count = len(self._repo.list_notes())
         uncat_count = len(self._repo.list_notes(without_labels=True))
 
-        entries: list[tuple[str, str, Optional[int], int, str]] = [
+        entries: list[tuple[str, str, Optional[int], int, Optional[str]]] = [
             ("All Notes", "all", None, all_count, "view-grid-symbolic"),
-            ("Uncategorised", "without", None, uncat_count, "tag-outline-symbolic"),
+            ("Unlabelled", "without", None, uncat_count, "folder-templates-symbolic"),
         ]
         for tag in self._repo.list_tags():
             tid = int(tag["id"])
             cnt = len(self._repo.list_notes([tid]))
-            entries.append((tag["name"], "tag", tid, cnt, "folder-symbolic"))
+            entries.append((tag["name"], "tag", tid, cnt, None))
 
         row_to_select: Optional[Gtk.ListBoxRow] = None
         for label, ftype, tid, cnt, icon_name in entries:
@@ -437,16 +460,18 @@ class NotesWindow(Adw.ApplicationWindow):
             box.set_margin_start(10)
             box.set_margin_end(10)
 
-            icon = Gtk.Image.new_from_icon_name(icon_name)
+            if icon_name:
+                icon = Gtk.Image.new_from_icon_name(icon_name)
+                box.append(icon)
+                
             name_lbl = Gtk.Label(label=label)
             name_lbl.set_xalign(0)
             name_lbl.set_hexpand(True)
             name_lbl.set_ellipsize(Pango.EllipsizeMode.END)
 
             count_lbl = Gtk.Label(label=str(cnt))
-            count_lbl.add_css_class("dim-label")
+            count_lbl.add_css_class("dimmed")
 
-            box.append(icon)
             box.append(name_lbl)
             box.append(count_lbl)
             row.set_child(box)
@@ -458,7 +483,7 @@ class NotesWindow(Adw.ApplicationWindow):
                 gesture.connect("pressed", self._on_tag_right_click, tid, label)
                 row.add_controller(gesture)
             
-            self._categories_list.append(row)
+            self._labels_list.append(row)
 
             if ftype == "all" and not self._without_labels_filter and self._selected_tag_id is None:
                 row_to_select = row
@@ -468,7 +493,7 @@ class NotesWindow(Adw.ApplicationWindow):
                 row_to_select = row
 
         if row_to_select is not None:
-            self._categories_list.select_row(row_to_select)
+            self._labels_list.select_row(row_to_select)
 
         self._syncing_sidebar = False
 
@@ -611,7 +636,7 @@ class NotesWindow(Adw.ApplicationWindow):
         except Exception as exc:
             self._toast(f"Error deleting tag: {exc}")
 
-    def _on_category_selected(
+    def _on_label_selected(
         self, _lb: Gtk.ListBox, row: Optional[Gtk.ListBoxRow]
     ) -> None:
         if self._syncing_sidebar:
@@ -630,7 +655,7 @@ class NotesWindow(Adw.ApplicationWindow):
             elif ftype == "without":
                 self._selected_tag_id = None
                 self._without_labels_filter = True
-                self._selected_filter_name = "Uncategorised"
+                self._selected_filter_name = "Unlabelled"
             else:
                 self._selected_tag_id = getattr(row, "tag_id", None)
                 self._without_labels_filter = False
@@ -716,7 +741,7 @@ class NotesWindow(Adw.ApplicationWindow):
         excerpt_lbl.set_hexpand(True)
         excerpt_lbl.set_ellipsize(Pango.EllipsizeMode.END)
         excerpt_lbl.set_single_line_mode(True)
-        excerpt_lbl.add_css_class("dim-label")
+        excerpt_lbl.add_css_class("dimmed")
         bottom.append(excerpt_lbl)
 
         tags = self._repo.get_note_tags(nid)
@@ -764,15 +789,15 @@ class NotesWindow(Adw.ApplicationWindow):
         self._title_entry.set_text(note.get("title", "") or "")
         self._content_view.get_buffer().set_text(note.get("content", "") or "")
         tags = self._repo.get_note_tags(note_id)
-        self._tags_entry.set_text(", ".join(t["name"] for t in tags))
+        self._clear_tag_chips()
+        for tag in tags:
+            self._add_tag_chip(tag["name"])
 
     def _auto_save(self) -> None:
         title = self._title_entry.get_text().strip()
         buf = self._content_view.get_buffer()
         content = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), True)
-        tag_names = [
-            t.strip() for t in self._tags_entry.get_text().split(",") if t.strip()
-        ]
+        tag_names = self._get_current_tags()
 
         if not title and not content.strip():
             return
@@ -791,16 +816,75 @@ class NotesWindow(Adw.ApplicationWindow):
 
         self._start_reindex()
 
+    # -- Tag chips management --
+
+    def _add_tag_chip(self, tag_name: str) -> None:
+        """Add a tag button to the toolbar."""
+        if not tag_name.strip():
+            return
+        
+        # Check if tag already exists
+        for tag in self._get_current_tags():
+            if tag.lower() == tag_name.lower():
+                return
+        
+        # Create button with AdwButtonContent
+        tag_btn = Gtk.Button()
+        tag_btn.set_has_frame(True)
+        
+        btn_content = Adw.ButtonContent()
+        btn_content.set_label(tag_name)
+        btn_content.set_icon_name("edit-delete-symbolic")
+        tag_btn.set_child(btn_content)
+        
+        tag_btn.connect("clicked", lambda _: self._remove_tag_chip(tag_btn))
+        
+        self._tags_toolbar.append(tag_btn)
+    
+    def _remove_tag_chip(self, tag_widget: Gtk.Widget) -> None:
+        """Remove a tag button from the toolbar."""
+        self._tags_toolbar.remove(tag_widget)
+    
+    def _clear_tag_chips(self) -> None:
+        """Remove all tag buttons."""
+        child = self._tags_toolbar.get_first_child()
+        while child is not None:
+            next_child = child.get_next_sibling()
+            # Skip the entry field (first child)
+            if child != self._tags_add_entry:
+                self._tags_toolbar.remove(child)
+            child = next_child
+    
+    def _get_current_tags(self) -> list[str]:
+        """Get list of current tag names from buttons."""
+        tags = []
+        child = self._tags_toolbar.get_first_child()
+        while child is not None:
+            # Skip the entry field
+            if child != self._tags_add_entry and isinstance(child, Gtk.Button):
+                btn_content = child.get_child()
+                if isinstance(btn_content, Adw.ButtonContent):
+                    tags.append(btn_content.get_label())
+            child = child.get_next_sibling()
+        return tags
+    
+    def _on_add_tag(self, entry: Gtk.Entry) -> None:
+        """Add new tag from entry."""
+        tag_name = entry.get_text().strip()
+        if tag_name:
+            self._add_tag_chip(tag_name)
+            entry.set_text("")
+
     # -- Actions --
 
-    def _on_toggle_favourite(self, _action: Gio.SimpleAction, _param: None) -> None:
+    def _on_toggle_favourite(self, _btn: Gtk.Button) -> None:
         if self._current_note_id is None:
             return
         is_fav = self._repo.toggle_favourite(self._current_note_id)
         self._toast("Added to Favourites" if is_fav else "Removed from Favourites")
-        self._refresh_fav_label()
+        self._refresh_fav_button()
 
-    def _on_delete_clicked(self, *_args: object) -> None:
+    def _on_delete_clicked(self, _btn: Gtk.Button) -> None:
         if self._current_note_id is None:
             self._toast("No note selected")
             return
@@ -819,7 +903,12 @@ class NotesWindow(Adw.ApplicationWindow):
         bar.set_halign(Gtk.Align.CENTER)
         bar.set_margin_top(6)
         bar.set_margin_bottom(6)
+        bar.add_css_class("toolbar")
         bar.add_css_class("formatting-toolbar")
+
+        linked = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        linked.add_css_class("linked")
+        bar.append(linked)
 
         items: list[tuple[Optional[str], Optional[str], str, object]] = [
             ("H", None, "Heading", self._fmt_heading),
@@ -843,9 +932,8 @@ class NotesWindow(Adw.ApplicationWindow):
                 else Gtk.Button(label=label)
             )
             btn.set_tooltip_text(tooltip)
-            btn.add_css_class("flat")
             btn.connect("clicked", lambda _b, fn=cb: fn())
-            bar.append(btn)
+            linked.append(btn)
 
         return bar
 
@@ -1023,7 +1111,21 @@ class AskDialog(Adw.Window):
         self.set_default_size(640, 520)
 
         tv = Adw.ToolbarView()
-        tv.add_top_bar(Adw.HeaderBar())
+        header = Adw.HeaderBar()
+        
+        # Ask button in headerbar (suggested action)
+        self._ask_btn = Gtk.Button(label="Ask")
+        self._ask_btn.add_css_class("suggested-action")
+        self._ask_btn.connect("clicked", self._on_ask)
+        header.pack_end(self._ask_btn)
+        
+        # Cancel button in headerbar
+        self._cancel_btn = Gtk.Button(label="Cancel")
+        self._cancel_btn.set_sensitive(False)
+        self._cancel_btn.connect("clicked", self._on_cancel)
+        header.pack_end(self._cancel_btn)
+        
+        tv.add_top_bar(header)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         box.set_margin_top(16)
@@ -1036,24 +1138,18 @@ class AskDialog(Adw.Window):
         self._entry.connect("activate", self._on_ask)
         box.append(self._entry)
 
-        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self._ask_btn = Gtk.Button(label="Ask")
-        self._ask_btn.add_css_class("suggested-action")
-        self._ask_btn.connect("clicked", self._on_ask)
-        self._cancel_btn = Gtk.Button(label="Cancel")
-        self._cancel_btn.set_sensitive(False)
-        self._cancel_btn.connect("clicked", self._on_cancel)
-        self._reindex_btn = Gtk.Button(label="Re-index")
-        self._reindex_btn.connect("clicked", self._on_reindex)
-        btn_row.append(self._ask_btn)
-        btn_row.append(self._cancel_btn)
-        btn_row.append(self._reindex_btn)
-        box.append(btn_row)
-
+        # Status and re-index button
+        status_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self._status = Gtk.Label(label="Ready")
         self._status.set_xalign(0)
-        self._status.add_css_class("dim-label")
-        box.append(self._status)
+        self._status.set_hexpand(True)
+        self._status.add_css_class("dimmed")
+        status_box.append(self._status)
+        
+        self._reindex_btn = Gtk.Button(label="Re-index")
+        self._reindex_btn.connect("clicked", self._on_reindex)
+        status_box.append(self._reindex_btn)
+        box.append(status_box)
 
         self._sources = Gtk.Label(label="")
         self._sources.set_xalign(0)
