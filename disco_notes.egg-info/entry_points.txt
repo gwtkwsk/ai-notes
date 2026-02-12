@@ -1,0 +1,2 @@
+[console_scripts]
+disco-notes-desktop = app.desktop.main:main

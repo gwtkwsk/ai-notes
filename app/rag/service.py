@@ -5,7 +5,6 @@ from typing import Dict, List
 from app.data.repository import Repository
 from app.rag.config import EMBED_MODEL, LLM_MODEL, OLLAMA_BASE_URL, TOP_K
 from app.rag.index import RagIndex
-from app.rag.langgraph_rag import _build_prompt, _format_contexts, build_graph
 from app.rag.ollama_client import OllamaClient
 
 
@@ -15,12 +14,22 @@ class RagService:
         self._db_path = repo.db_path
         self._client = OllamaClient(OLLAMA_BASE_URL, EMBED_MODEL, LLM_MODEL)
         self._index = RagIndex(repo, self._client)
-        self._graph = build_graph(self._index, self._client)
+        self._graph = None
 
     def build_index(self, progress_cb=None) -> int:
         return self._index.build_index(progress_cb)
 
     def ask(self, question: str) -> Dict[str, List[str] | str]:
+        if self._graph is None:
+            try:
+                from app.rag.langgraph_rag import build_graph
+            except ModuleNotFoundError as exc:
+                raise RuntimeError(
+                    "Brakuje zależności 'langgraph' wymaganej dla trybu ask(). "
+                    "Użyj streamingu albo doinstaluj zależności projektu."
+                ) from exc
+            self._graph = build_graph(self._index, self._client)
+
         state = self._graph.invoke({"question": question})
         sources = [note.get("title", "Untitled") for note in state.get("contexts", [])]
         answer, thinking = _split_thinking(state.get("answer", ""))
@@ -109,6 +118,27 @@ def _split_thinking(text: str) -> tuple[str, str]:
     thinking = text[start + len("<think>") : end].strip()
     answer = (text[:start] + text[end + len("</think>") :]).strip()
     return answer, thinking
+
+
+def _build_prompt(contexts: str, question: str) -> str:
+    return (
+        "Jestes asystentem odpowiadajacym na pytania na podstawie notatek. "
+        "Jesli odpowiedz nie wynika z notatek, powiedz wprost, ze nie masz informacji. "
+        "Odpowiadaj zwięźle, po polsku.\n\n"
+        f"Notatki:\n{contexts}\n\n"
+        f"Pytanie: {question}\n"
+        "Odpowiedz:"
+    )
+
+
+def _format_contexts(contexts: List[Dict]) -> str:
+    parts = []
+    for idx, note in enumerate(contexts, start=1):
+        title = note.get("title", "Untitled")
+        content = note.get("content", "")
+        content = content[:2000]
+        parts.append(f"[{idx}] {title}\n{content}")
+    return "\n\n".join(parts)
 
 
 def _split_thinking_stream(text: str) -> tuple[str, str, bool]:

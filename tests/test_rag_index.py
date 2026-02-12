@@ -18,7 +18,7 @@ class FakeOllama(OllamaClient):
 
 def test_build_index_and_query(tmp_path):
     repo = Repository(str(tmp_path / "notes.db"))
-    note_id = repo.create_note("Title", "Body", False)
+    note_id = repo.create_note("Title", "Body")
     index = RagIndex(repo, FakeOllama())
 
     index.build_index()

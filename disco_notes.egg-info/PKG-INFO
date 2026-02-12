@@ -1,48 +1,69 @@
 Metadata-Version: 2.4
 Name: disco-notes
 Version: 0.1.0
-Summary: Desktop notes app MVP with Tauri and Python backend.
+Summary: Notes app MVP with Python backend.
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
-Requires-Dist: fastapi>=0.110.0
 Requires-Dist: langgraph>=0.0.40
-Requires-Dist: uvicorn>=0.24.0
 Provides-Extra: dev
 Requires-Dist: pytest>=7.4; extra == "dev"
 
 # Disco Notes (MVP)
 
-A minimal desktop notes application with a Tauri shell and a Python (FastAPI) backend.
+Native GNOME notes app (GTK4/Libadwaita) with local SQLite, Markdown notes, tags, and Q&A over notes using RAG + Ollama.
 
 ## Features
 
-- Create, view, edit notes in plain text or Markdown
+- Native GNOME desktop UI (Libadwaita)
+- Create, view, and edit notes in Markdown
 - Tag notes and filter by multiple tags (AND)
-- Markdown preview mode
+- Ask questions about your notes (RAG + Ollama)
 - Local SQLite storage
 
-## Run (dev)
+## Run desktop (Fedora GNOME)
+
+Install system dependencies:
 
 ```bash
-uv venv
-source .venv/bin/activate
-uv lock
-uv sync
-cd ui
-npm install
-npm run tauri dev
+sudo dnf install -y python3-gobject gtk4 libadwaita
 ```
 
-The Tauri app starts the Python backend automatically. If you want to run the API alone:
+Run desktop app:
 
 ```bash
-uv run python main.py
+python3 desktop.py
 ```
+
+The app stores data in:
+
+```text
+~/.local/share/disco-notes/notes.db
+```
+
+You can override it with:
+
+```bash
+DISCO_NOTES_DB=/path/to/notes.db python3 desktop.py
+```
+
+## Ollama (required for Q&A)
+
+Run Ollama and pull models used by the app:
+
+```bash
+ollama serve
+ollama pull nomic-embed-text
+ollama pull qwen2.5:7b
+```
+
+Model and endpoint settings are in:
+
+- `app/rag/config.py`
 
 ## Tests
 
 ```bash
 uv lock
-uv sync --dev
-pytest
+uv sync --extra dev
+uv run python -m pytest
 ```

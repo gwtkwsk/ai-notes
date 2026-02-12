@@ -1,12 +1,12 @@
 README.md
 pyproject.toml
 app/__init__.py
-app/api/__init__.py
-app/api/main.py
-app/api/server.py
 app/data/__init__.py
 app/data/repository.py
 app/data/schema.py
+app/desktop/__init__.py
+app/desktop/main.py
+app/desktop/markdown_preview.py
 app/rag/__init__.py
 app/rag/config.py
 app/rag/index.py
@@ -16,6 +16,7 @@ app/rag/service.py
 disco_notes.egg-info/PKG-INFO
 disco_notes.egg-info/SOURCES.txt
 disco_notes.egg-info/dependency_links.txt
+disco_notes.egg-info/entry_points.txt
 disco_notes.egg-info/requires.txt
 disco_notes.egg-info/top_level.txt
 tests/test_rag_index.py

@@ -1,0 +1,1007 @@
+from __future__ import annotations
+
+import re
+from datetime import date, datetime, timedelta
+import os
+from pathlib import Path
+import threading
+from typing import Optional
+
+import gi
+
+from app.data.repository import Repository
+from app.desktop.markdown_preview import MarkdownPreview
+from app.rag.service import RagService
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+
+from gi.repository import Adw, Gio, GLib, Gtk, Pango  # noqa: E402
+
+_CSS = """\
+.pill {
+    border: 1px solid alpha(currentColor, 0.25);
+    border-radius: 100px;
+    padding: 1px 10px;
+    font-size: 0.85em;
+}
+.blockquote-border {
+    background-color: alpha(currentColor, 0.35);
+}
+.formatting-toolbar {
+    border-top: 1px solid alpha(currentColor, 0.12);
+}
+"""
+
+
+def _default_db_path() -> str:
+    data_home = Path(
+        os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")
+    )
+    app_dir = data_home / "disco-notes"
+    app_dir.mkdir(parents=True, exist_ok=True)
+    return str(app_dir / "notes.db")
+
+
+# --- Main window ---
+
+
+class NotesWindow(Adw.ApplicationWindow):
+    def __init__(
+        self,
+        app: Adw.Application,
+        repo: Repository,
+        rag_service: Optional[RagService] = None,
+    ) -> None:
+        super().__init__(application=app)
+        self._repo = repo
+        self._rag_service = rag_service
+
+        # state
+        self._current_note_id: Optional[int] = None
+        self._selected_tag_id: Optional[int] = None
+        self._without_labels_filter = False
+        self._selected_filter_name = "All Notes"
+        self._syncing_sidebar = False
+        self._reindex_running = False
+        self._header_packed: list[Gtk.Widget] = []
+
+        self.set_title("Disco Notes")
+        self.set_default_size(1200, 780)
+        self._load_css()
+
+        # Toast overlay wraps everything
+        self._toast_overlay = Adw.ToastOverlay()
+        self.set_content(self._toast_overlay)
+
+        # Main paned: sidebar | content
+        paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        paned.set_wide_handle(True)
+        self._toast_overlay.set_child(paned)
+
+        # --- Sidebar ---
+        sidebar_tv = Adw.ToolbarView()
+        sidebar_hb = Adw.HeaderBar()
+        sidebar_hb.set_show_end_title_buttons(False)
+        sidebar_hb.set_title_widget(
+            Adw.WindowTitle(title="Categories", subtitle="")
+        )
+        hamburger = Gtk.Button(icon_name="open-menu-symbolic")
+        hamburger.set_tooltip_text("Menu")
+        sidebar_hb.pack_end(hamburger)
+        sidebar_tv.add_top_bar(sidebar_hb)
+
+        sidebar_scroll = Gtk.ScrolledWindow()
+        sidebar_scroll.set_policy(
+            Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC
+        )
+        sidebar_scroll.set_size_request(280, -1)
+
+        self._categories_list = Gtk.ListBox()
+        self._categories_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self._categories_list.add_css_class("navigation-sidebar")
+        self._categories_list.connect(
+            "row-selected", self._on_category_selected
+        )
+        sidebar_scroll.set_child(self._categories_list)
+        sidebar_tv.set_content(sidebar_scroll)
+        paned.set_start_child(sidebar_tv)
+
+        # --- Content area ---
+        content_tv = Adw.ToolbarView()
+        self._content_header = Adw.HeaderBar()
+        self._content_header.set_show_start_title_buttons(False)
+
+        self._window_title = Adw.WindowTitle(
+            title="All Notes", subtitle=""
+        )
+        self._content_header.set_title_widget(self._window_title)
+        content_tv.add_top_bar(self._content_header)
+
+        # Reusable buttons (shown/hidden per mode)
+        self._new_button = Gtk.Button(icon_name="list-add-symbolic")
+        self._new_button.set_tooltip_text("New Note")
+        self._new_button.connect("clicked", self._on_new_clicked)
+
+        self._search_button = Gtk.Button(
+            icon_name="system-search-symbolic"
+        )
+        self._search_button.set_tooltip_text("Search (RAG)")
+        self._search_button.connect("clicked", self._on_open_ask_clicked)
+
+        self._back_button = Gtk.Button(icon_name="go-previous-symbolic")
+        self._back_button.set_tooltip_text("Back")
+        self._back_button.connect("clicked", self._on_back_clicked)
+
+        self._edit_button = Gtk.Button(
+            icon_name="document-edit-symbolic"
+        )
+        self._edit_button.set_tooltip_text("Edit")
+        self._edit_button.connect("clicked", self._on_edit_clicked)
+
+        self._preview_button = Gtk.Button(
+            icon_name="view-reveal-symbolic"
+        )
+        self._preview_button.set_tooltip_text("Preview")
+        self._preview_button.connect("clicked", self._on_preview_clicked)
+
+        # Three-dot menu
+        self._menu_button = Gtk.MenuButton(
+            icon_name="view-more-symbolic"
+        )
+        self._menu_button.set_tooltip_text("More")
+        self._fav_section = Gio.Menu()
+        self._fav_section.append(
+            "Add to Favourites", "win.toggle-favourite"
+        )
+        del_section = Gio.Menu()
+        del_section.append("Delete", "win.delete-note")
+        menu = Gio.Menu()
+        menu.append_section(None, self._fav_section)
+        menu.append_section(None, del_section)
+        self._menu_button.set_menu_model(menu)
+
+        fav_action = Gio.SimpleAction.new("toggle-favourite", None)
+        fav_action.connect("activate", self._on_toggle_favourite)
+        self.add_action(fav_action)
+
+        del_action = Gio.SimpleAction.new("delete-note", None)
+        del_action.connect("activate", self._on_delete_clicked)
+        self.add_action(del_action)
+
+        # --- Content stack: list | preview | editor ---
+        self._content_stack = Gtk.Stack()
+        self._content_stack.set_transition_type(
+            Gtk.StackTransitionType.SLIDE_LEFT_RIGHT
+        )
+
+        # -- List --
+        list_scroll = Gtk.ScrolledWindow()
+        list_scroll.set_policy(
+            Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC
+        )
+        self._notes_sections_box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=22
+        )
+        self._notes_sections_box.set_margin_top(24)
+        self._notes_sections_box.set_margin_bottom(24)
+        self._notes_sections_box.set_margin_start(24)
+        self._notes_sections_box.set_margin_end(24)
+        list_clamp = Adw.Clamp()
+        wrapper = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        wrapper.append(self._notes_sections_box)
+        list_clamp.set_child(wrapper)
+        list_clamp.set_maximum_size(920)
+        list_scroll.set_child(list_clamp)
+        self._content_stack.add_named(list_scroll, "list")
+
+        # -- Preview --
+        self._md_preview = MarkdownPreview()
+        self._content_stack.add_named(self._md_preview, "preview")
+
+        # -- Editor --
+        editor_outer = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=0
+        )
+        editor_scroll = Gtk.ScrolledWindow()
+        editor_scroll.set_policy(
+            Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC
+        )
+        editor_scroll.set_vexpand(True)
+
+        editor_box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=8
+        )
+        editor_box.set_margin_top(16)
+        editor_box.set_margin_bottom(16)
+        editor_box.set_margin_start(16)
+        editor_box.set_margin_end(16)
+
+        self._title_entry = Gtk.Entry()
+        self._title_entry.set_placeholder_text("Title")
+        self._title_entry.add_css_class("title-2")
+        editor_box.append(self._title_entry)
+
+        self._tags_entry = Gtk.Entry()
+        self._tags_entry.set_placeholder_text("Tags (comma separated)")
+        editor_box.append(self._tags_entry)
+
+        text_scroll = Gtk.ScrolledWindow()
+        text_scroll.set_policy(
+            Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC
+        )
+        text_scroll.set_vexpand(True)
+        text_scroll.set_hexpand(True)
+
+        self._content_view = Gtk.TextView()
+        self._content_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self._content_view.set_monospace(True)
+        self._content_view.set_top_margin(8)
+        self._content_view.set_bottom_margin(8)
+        self._content_view.set_left_margin(8)
+        self._content_view.set_right_margin(8)
+        text_scroll.set_child(self._content_view)
+        editor_box.append(text_scroll)
+
+        editor_clamp = Adw.Clamp()
+        editor_clamp.set_child(editor_box)
+        editor_clamp.set_maximum_size(980)
+        editor_scroll.set_child(editor_clamp)
+
+        editor_outer.append(editor_scroll)
+        editor_outer.append(self._build_formatting_toolbar())
+        self._content_stack.add_named(editor_outer, "editor")
+
+        content_tv.set_content(self._content_stack)
+        paned.set_end_child(content_tv)
+
+        # --- Initial load ---
+        self._reload_sidebar()
+        self._reload_notes_list()
+        self._set_mode("list")
+
+    # -- CSS --
+
+    def _load_css(self) -> None:
+        provider = Gtk.CssProvider()
+        provider.load_from_data(_CSS.encode())
+        Gtk.StyleContext.add_provider_for_display(
+            self.get_display(),
+            provider,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+        )
+
+    # -- Mode switching --
+
+    def _set_mode(self, mode: str) -> None:
+        """Switch visible content between list / preview / editor."""
+        self._content_stack.set_visible_child_name(mode)
+
+        # Remove previously packed header buttons
+        for btn in self._header_packed:
+            self._content_header.remove(btn)
+        self._header_packed.clear()
+
+        def _ps(w: Gtk.Widget) -> None:
+            self._content_header.pack_start(w)
+            self._header_packed.append(w)
+
+        def _pe(w: Gtk.Widget) -> None:
+            self._content_header.pack_end(w)
+            self._header_packed.append(w)
+
+        if mode == "list":
+            _ps(self._new_button)
+            _pe(self._search_button)
+            self._window_title.set_title(self._selected_filter_name)
+            self._window_title.set_subtitle("")
+
+        elif mode == "preview":
+            _ps(self._back_button)
+            _pe(self._menu_button)
+            _pe(self._edit_button)
+            note = (
+                self._repo.get_note(self._current_note_id)
+                if self._current_note_id
+                else None
+            )
+            self._window_title.set_title(
+                (note.get("title") or "Note") if note else "Note"
+            )
+            self._window_title.set_subtitle("")
+            self._refresh_fav_label()
+
+        elif mode == "editor":
+            _ps(self._back_button)
+            _pe(self._menu_button)
+            _pe(self._preview_button)
+            self._window_title.set_title(
+                self._title_entry.get_text().strip() or "New Note"
+            )
+            self._window_title.set_subtitle("")
+            self._refresh_fav_label()
+
+    def _refresh_fav_label(self) -> None:
+        self._fav_section.remove_all()
+        is_fav = False
+        if self._current_note_id:
+            note = self._repo.get_note(self._current_note_id)
+            is_fav = bool(note and note.get("is_favourite"))
+        label = (
+            "Remove from Favourites" if is_fav else "Add to Favourites"
+        )
+        self._fav_section.append(label, "win.toggle-favourite")
+
+    # -- Navigation --
+
+    def _on_back_clicked(self, _btn: Gtk.Button) -> None:
+        if self._content_stack.get_visible_child_name() == "editor":
+            self._auto_save()
+        self._reload_sidebar()
+        self._reload_notes_list()
+        self._set_mode("list")
+
+    def _on_edit_clicked(self, _btn: Gtk.Button) -> None:
+        if self._current_note_id is None:
+            return
+        self._load_note_into_editor(self._current_note_id)
+        self._set_mode("editor")
+
+    def _on_preview_clicked(self, _btn: Gtk.Button) -> None:
+        self._auto_save()
+        if self._current_note_id is not None:
+            note = self._repo.get_note(self._current_note_id)
+            if note:
+                self._md_preview.render(note.get("content", ""))
+        self._set_mode("preview")
+
+    def _on_new_clicked(self, _btn: Gtk.Button) -> None:
+        self._current_note_id = None
+        self._title_entry.set_text("")
+        self._tags_entry.set_text("")
+        self._content_view.get_buffer().set_text("")
+        self._set_mode("editor")
+
+    # -- Note row activation (list -> preview) --
+
+    def _on_note_row_activated(
+        self, _lb: Gtk.ListBox, row: Gtk.ListBoxRow
+    ) -> None:
+        note_id = getattr(row, "note_id", None)
+        if note_id is None:
+            return
+        self._current_note_id = int(note_id)
+        note = self._repo.get_note(self._current_note_id)
+        if note is None:
+            self._toast("Note not found")
+            return
+        self._md_preview.render(note.get("content", ""))
+        self._set_mode("preview")
+
+    # -- Sidebar --
+
+    def _reload_sidebar(self) -> None:
+        self._syncing_sidebar = True
+
+        child = self._categories_list.get_first_child()
+        while child is not None:
+            nxt = child.get_next_sibling()
+            self._categories_list.remove(child)
+            child = nxt
+
+        all_count = len(self._repo.list_notes())
+        uncat_count = len(self._repo.list_notes(without_labels=True))
+
+        entries: list[tuple[str, str, Optional[int], int, str]] = [
+            ("All Notes", "all", None, all_count, "view-grid-symbolic"),
+            ("Uncategorised", "without", None, uncat_count, "tag-outline-symbolic"),
+        ]
+        for tag in self._repo.list_tags():
+            tid = int(tag["id"])
+            cnt = len(self._repo.list_notes([tid]))
+            entries.append((tag["name"], "tag", tid, cnt, "folder-symbolic"))
+
+        row_to_select: Optional[Gtk.ListBoxRow] = None
+        for label, ftype, tid, cnt, icon_name in entries:
+            row = Gtk.ListBoxRow()
+            row.filter_type = ftype    # type: ignore[attr-defined]
+            row.tag_id = tid           # type: ignore[attr-defined]
+            row.filter_title = label   # type: ignore[attr-defined]
+
+            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            box.set_margin_top(8)
+            box.set_margin_bottom(8)
+            box.set_margin_start(10)
+            box.set_margin_end(10)
+
+            icon = Gtk.Image.new_from_icon_name(icon_name)
+            name_lbl = Gtk.Label(label=label)
+            name_lbl.set_xalign(0)
+            name_lbl.set_hexpand(True)
+            name_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+
+            count_lbl = Gtk.Label(label=str(cnt))
+            count_lbl.add_css_class("dim-label")
+
+            box.append(icon)
+            box.append(name_lbl)
+            box.append(count_lbl)
+            row.set_child(box)
+            self._categories_list.append(row)
+
+            if ftype == "all" and not self._without_labels_filter and self._selected_tag_id is None:
+                row_to_select = row
+            elif ftype == "without" and self._without_labels_filter:
+                row_to_select = row
+            elif ftype == "tag" and tid is not None and self._selected_tag_id == tid:
+                row_to_select = row
+
+        if row_to_select is not None:
+            self._categories_list.select_row(row_to_select)
+
+        self._syncing_sidebar = False
+
+    def _on_category_selected(
+        self, _lb: Gtk.ListBox, row: Optional[Gtk.ListBoxRow]
+    ) -> None:
+        if self._syncing_sidebar:
+            return
+
+        if row is None:
+            self._selected_tag_id = None
+            self._without_labels_filter = False
+            self._selected_filter_name = "All Notes"
+        else:
+            ftype = getattr(row, "filter_type", "all")
+            if ftype == "all":
+                self._selected_tag_id = None
+                self._without_labels_filter = False
+                self._selected_filter_name = "All Notes"
+            elif ftype == "without":
+                self._selected_tag_id = None
+                self._without_labels_filter = True
+                self._selected_filter_name = "Uncategorised"
+            else:
+                self._selected_tag_id = getattr(row, "tag_id", None)
+                self._without_labels_filter = False
+                self._selected_filter_name = getattr(row, "filter_title", "")
+
+        self._reload_notes_list()
+        self._set_mode("list")
+
+    # -- Notes list --
+
+    def _reload_notes_list(self, select_note_id: Optional[int] = None) -> None:
+        self._clear_box(self._notes_sections_box)
+
+        tag_ids = [self._selected_tag_id] if self._selected_tag_id else None
+        notes = self._repo.list_notes(tag_ids, without_labels=self._without_labels_filter)
+
+        favourites = [n for n in notes if n.get("is_favourite")]
+        others = [n for n in notes if not n.get("is_favourite")]
+
+        grouped: dict[str, list[dict]] = {"Today": [], "Yesterday": [], "Older": []}
+        for n in others:
+            key = self._section_for_date(
+                self._parse_row_date(str(n.get("updated_at", "")))
+            )
+            grouped[key].append(n)
+
+        if favourites:
+            self._add_section("Favourites \u2605", favourites, select_note_id)
+        for sec in ("Today", "Yesterday", "Older"):
+            if grouped[sec]:
+                self._add_section(sec, grouped[sec], select_note_id)
+
+    def _add_section(
+        self, title: str, notes: list[dict], select_note_id: Optional[int] = None
+    ) -> None:
+        lbl = Gtk.Label(label=title)
+        lbl.set_xalign(0)
+        lbl.add_css_class("heading")
+        self._notes_sections_box.append(lbl)
+
+        lb = Gtk.ListBox()
+        lb.add_css_class("boxed-list")
+        lb.set_selection_mode(Gtk.SelectionMode.NONE)
+        lb.connect("row-activated", self._on_note_row_activated)
+
+        for note in notes:
+            row = self._build_note_row(note)
+            lb.append(row)
+            if select_note_id is not None and int(note["id"]) == select_note_id:
+                self._on_note_row_activated(lb, row)
+
+        self._notes_sections_box.append(lb)
+
+    def _build_note_row(self, note: dict) -> Gtk.ListBoxRow:
+        nid = int(note["id"])
+        title = (note.get("title") or "").strip() or "Untitled"
+        content = note.get("content", "")
+
+        row = Gtk.ListBoxRow()
+        row.set_activatable(True)
+        row.set_selectable(False)
+        row.note_id = nid  # type: ignore[attr-defined]
+
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        outer.set_margin_top(12)
+        outer.set_margin_bottom(12)
+        outer.set_margin_start(14)
+        outer.set_margin_end(14)
+
+        title_lbl = Gtk.Label(label=title)
+        title_lbl.set_xalign(0)
+        title_lbl.set_hexpand(True)
+        title_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        title_lbl.set_single_line_mode(True)
+        title_lbl.add_css_class("heading")
+        outer.append(title_lbl)
+
+        bottom = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+
+        excerpt = self._content_preview(content)
+        excerpt_lbl = Gtk.Label(label=excerpt)
+        excerpt_lbl.set_xalign(0)
+        excerpt_lbl.set_hexpand(True)
+        excerpt_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        excerpt_lbl.set_single_line_mode(True)
+        excerpt_lbl.add_css_class("dim-label")
+        bottom.append(excerpt_lbl)
+
+        tags = self._repo.get_note_tags(nid)
+        if tags:
+            pill_text = " / ".join(t["name"] for t in tags[:2])
+            pill = Gtk.Label(label=pill_text)
+            pill.add_css_class("pill")
+            pill.set_valign(Gtk.Align.CENTER)
+            bottom.append(pill)
+
+        outer.append(bottom)
+        row.set_child(outer)
+        return row
+
+    @staticmethod
+    def _content_preview(content: str, max_len: int = 100) -> str:
+        items: list[str] = []
+        for raw_line in content.split("\n"):
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            m = re.match(r"^-\s+\[([ xX])\]\s*(.*)", line)
+            if m:
+                mark = "\u2611" if m.group(1).lower() == "x" else "\u2610"
+                items.append(f"{mark} {m.group(2)}")
+                continue
+            m = re.match(r"^[-*]\s+(.*)", line)
+            if m:
+                items.append(f"\u2022 {m.group(1)}")
+                continue
+            items.append(line)
+        text = "   ".join(items)
+        if len(text) > max_len:
+            return text[: max_len - 1].rstrip() + "\u2026"
+        return text
+
+    # -- Editor helpers --
+
+    def _load_note_into_editor(self, note_id: int) -> None:
+        note = self._repo.get_note(note_id)
+        if note is None:
+            self._toast("Note not found")
+            return
+        self._current_note_id = note_id
+        self._title_entry.set_text(note.get("title", "") or "")
+        self._content_view.get_buffer().set_text(note.get("content", "") or "")
+        tags = self._repo.get_note_tags(note_id)
+        self._tags_entry.set_text(", ".join(t["name"] for t in tags))
+
+    def _auto_save(self) -> None:
+        title = self._title_entry.get_text().strip()
+        buf = self._content_view.get_buffer()
+        content = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), True)
+        tag_names = [
+            t.strip() for t in self._tags_entry.get_text().split(",") if t.strip()
+        ]
+
+        if not title and not content.strip():
+            return
+
+        title = title or "New Note"
+
+        if self._current_note_id is None:
+            nid = self._repo.create_note(title, content)
+            self._repo.set_note_tags(nid, tag_names)
+            self._current_note_id = nid
+            self._toast("Note created")
+        else:
+            self._repo.update_note(self._current_note_id, title, content)
+            self._repo.set_note_tags(self._current_note_id, tag_names)
+            self._toast("Saved")
+
+        self._start_reindex()
+
+    # -- Actions --
+
+    def _on_toggle_favourite(self, _action: Gio.SimpleAction, _param: None) -> None:
+        if self._current_note_id is None:
+            return
+        is_fav = self._repo.toggle_favourite(self._current_note_id)
+        self._toast("Added to Favourites" if is_fav else "Removed from Favourites")
+        self._refresh_fav_label()
+
+    def _on_delete_clicked(self, *_args: object) -> None:
+        if self._current_note_id is None:
+            self._toast("No note selected")
+            return
+        self._repo.delete_note(self._current_note_id)
+        self._toast("Deleted")
+        self._current_note_id = None
+        self._reload_sidebar()
+        self._reload_notes_list()
+        self._set_mode("list")
+        self._start_reindex()
+
+    # -- Formatting toolbar --
+
+    def _build_formatting_toolbar(self) -> Gtk.Box:
+        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        bar.set_halign(Gtk.Align.CENTER)
+        bar.set_margin_top(6)
+        bar.set_margin_bottom(6)
+        bar.add_css_class("formatting-toolbar")
+
+        items: list[tuple[Optional[str], Optional[str], str, object]] = [
+            ("H", None, "Heading", self._fmt_heading),
+            (None, "format-text-bold-symbolic", "Bold", self._fmt_bold),
+            (None, "format-text-italic-symbolic", "Italic", self._fmt_italic),
+            (None, "format-text-strikethrough-symbolic", "Strikethrough", self._fmt_strike),
+            ("\u2022", None, "Bullet list", self._fmt_bullet),
+            ("1.", None, "Numbered list", self._fmt_ordered),
+            ("\u2611", None, "Checkbox", self._fmt_checkbox),
+            ("\U0001f517", None, "Link", self._fmt_link),
+            ("\u2015", None, "Horizontal rule", self._fmt_hrule),
+            ("\u275d", None, "Blockquote", self._fmt_quote),
+            ("<>", None, "Code", self._fmt_code),
+            ("\u229e", None, "Table", self._fmt_table),
+        ]
+
+        for label, icon, tooltip, cb in items:
+            btn = (
+                Gtk.Button(icon_name=icon)
+                if icon
+                else Gtk.Button(label=label)
+            )
+            btn.set_tooltip_text(tooltip)
+            btn.add_css_class("flat")
+            btn.connect("clicked", lambda _b, fn=cb: fn())
+            bar.append(btn)
+
+        return bar
+
+    # formatting helpers
+
+    def _fmt_wrap(self, prefix: str, suffix: str) -> None:
+        buf = self._content_view.get_buffer()
+        if buf.get_has_selection():
+            start, end = buf.get_selection_bounds()
+            text = buf.get_text(start, end, True)
+            buf.begin_user_action()
+            buf.delete(start, end)
+            buf.insert_at_cursor(f"{prefix}{text}{suffix}")
+            buf.end_user_action()
+        else:
+            buf.insert_at_cursor(f"{prefix}{suffix}")
+
+    def _fmt_prefix(self, prefix: str) -> None:
+        buf = self._content_view.get_buffer()
+        it = buf.get_iter_at_mark(buf.get_insert())
+        it.set_line_offset(0)
+        buf.insert(it, prefix)
+
+    def _fmt_heading(self) -> None:
+        self._fmt_prefix("# ")
+
+    def _fmt_bold(self) -> None:
+        self._fmt_wrap("**", "**")
+
+    def _fmt_italic(self) -> None:
+        self._fmt_wrap("*", "*")
+
+    def _fmt_strike(self) -> None:
+        self._fmt_wrap("~~", "~~")
+
+    def _fmt_bullet(self) -> None:
+        self._fmt_prefix("- ")
+
+    def _fmt_ordered(self) -> None:
+        self._fmt_prefix("1. ")
+
+    def _fmt_checkbox(self) -> None:
+        self._fmt_prefix("- [ ] ")
+
+    def _fmt_link(self) -> None:
+        self._fmt_wrap("[", "](url)")
+
+    def _fmt_hrule(self) -> None:
+        self._content_view.get_buffer().insert_at_cursor("\n---\n")
+
+    def _fmt_quote(self) -> None:
+        self._fmt_prefix("> ")
+
+    def _fmt_code(self) -> None:
+        buf = self._content_view.get_buffer()
+        if buf.get_has_selection():
+            start, end = buf.get_selection_bounds()
+            text = buf.get_text(start, end, True)
+            if "\n" in text:
+                buf.begin_user_action()
+                buf.delete(start, end)
+                buf.insert_at_cursor(f"```\n{text}\n```")
+                buf.end_user_action()
+                return
+        self._fmt_wrap("`", "`")
+
+    def _fmt_table(self) -> None:
+        self._content_view.get_buffer().insert_at_cursor(
+            "\n| Column 1 | Column 2 |\n"
+            "|----------|----------|\n"
+            "| Cell     | Cell     |\n"
+        )
+
+    # -- Utilities --
+
+    def _toast(self, message: str) -> None:
+        self._toast_overlay.add_toast(Adw.Toast.new(message))
+
+    @staticmethod
+    def _parse_row_date(raw: str) -> Optional[date]:
+        raw = raw.strip()
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(raw.replace(" ", "T")).date()
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _section_for_date(d: Optional[date]) -> str:
+        if d is None:
+            return "Older"
+        today = date.today()
+        if d == today:
+            return "Today"
+        if d == today - timedelta(days=1):
+            return "Yesterday"
+        return "Older"
+
+    def _clear_box(self, box: Gtk.Box) -> None:
+        child = box.get_first_child()
+        while child is not None:
+            nxt = child.get_next_sibling()
+            box.remove(child)
+            child = nxt
+
+    # -- RAG --
+
+    def _on_open_ask_clicked(self, _btn: Gtk.Button) -> None:
+        dlg = AskDialog(self, self._rag_service)
+        dlg.present()
+
+    def _start_reindex(self) -> None:
+        if self._rag_service is None or self._reindex_running:
+            return
+        self._reindex_running = True
+        threading.Thread(target=self._reindex_worker, daemon=True).start()
+
+    def _reindex_worker(self) -> None:
+        if self._rag_service is None:
+            GLib.idle_add(self._on_reindex_done, "")
+            return
+        rag = self._rag_service.clone_for_thread()
+        try:
+            rag.build_index()
+            GLib.idle_add(self._on_reindex_done, "")
+        except Exception as exc:
+            GLib.idle_add(self._on_reindex_done, str(exc))
+        finally:
+            rag.close()
+
+    def _on_reindex_done(self, error: str) -> bool:
+        self._reindex_running = False
+        if error:
+            self._toast(f"Re-index error: {error}")
+        return False
+
+
+# --- RAG dialog ---
+
+
+class AskDialog(Adw.Window):
+    """Modal dialog for RAG queries."""
+
+    def __init__(
+        self,
+        parent: NotesWindow,
+        rag_service: Optional[RagService],
+    ) -> None:
+        super().__init__()
+        self._parent = parent
+        self._rag = rag_service
+        self._running = False
+        self._cancel = threading.Event()
+
+        self.set_transient_for(parent)
+        self.set_modal(True)
+        self.set_title("Ask your notes")
+        self.set_default_size(640, 520)
+
+        tv = Adw.ToolbarView()
+        tv.add_top_bar(Adw.HeaderBar())
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_margin_top(16)
+        box.set_margin_bottom(16)
+        box.set_margin_start(16)
+        box.set_margin_end(16)
+
+        self._entry = Gtk.Entry()
+        self._entry.set_placeholder_text("Ask a question about your notes\u2026")
+        self._entry.connect("activate", self._on_ask)
+        box.append(self._entry)
+
+        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self._ask_btn = Gtk.Button(label="Ask")
+        self._ask_btn.add_css_class("suggested-action")
+        self._ask_btn.connect("clicked", self._on_ask)
+        self._cancel_btn = Gtk.Button(label="Cancel")
+        self._cancel_btn.set_sensitive(False)
+        self._cancel_btn.connect("clicked", self._on_cancel)
+        self._reindex_btn = Gtk.Button(label="Re-index")
+        self._reindex_btn.connect("clicked", self._on_reindex)
+        btn_row.append(self._ask_btn)
+        btn_row.append(self._cancel_btn)
+        btn_row.append(self._reindex_btn)
+        box.append(btn_row)
+
+        self._status = Gtk.Label(label="Ready")
+        self._status.set_xalign(0)
+        self._status.add_css_class("dim-label")
+        box.append(self._status)
+
+        self._sources = Gtk.Label(label="")
+        self._sources.set_xalign(0)
+        self._sources.set_wrap(True)
+        self._sources.set_selectable(True)
+        self._sources.add_css_class("caption")
+        box.append(self._sources)
+
+        answer_scroll = Gtk.ScrolledWindow()
+        answer_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        answer_scroll.set_vexpand(True)
+        self._answer = Gtk.TextView()
+        self._answer.set_editable(False)
+        self._answer.set_cursor_visible(False)
+        self._answer.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        answer_scroll.set_child(self._answer)
+        box.append(answer_scroll)
+
+        exp = Gtk.Expander(label="Model reasoning")
+        exp.set_expanded(False)
+        think_scroll = Gtk.ScrolledWindow()
+        think_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        think_scroll.set_min_content_height(100)
+        self._thinking = Gtk.TextView()
+        self._thinking.set_editable(False)
+        self._thinking.set_cursor_visible(False)
+        self._thinking.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self._thinking.set_monospace(True)
+        think_scroll.set_child(self._thinking)
+        exp.set_child(think_scroll)
+        box.append(exp)
+
+        tv.set_content(box)
+        self.set_content(tv)
+
+    def _on_ask(self, *_a: object) -> None:
+        if self._rag is None:
+            self._status.set_text("RAG not available")
+            return
+        q = self._entry.get_text().strip()
+        if not q or self._running:
+            return
+        self._answer.get_buffer().set_text("")
+        self._thinking.get_buffer().set_text("")
+        self._sources.set_text("")
+        self._status.set_text("Running\u2026")
+        self._running = True
+        self._cancel.clear()
+        self._ask_btn.set_sensitive(False)
+        self._cancel_btn.set_sensitive(True)
+        threading.Thread(target=self._worker, args=(q,), daemon=True).start()
+
+    def _on_cancel(self, *_a: object) -> None:
+        self._cancel.set()
+
+    def _on_reindex(self, *_a: object) -> None:
+        self._parent._start_reindex()
+        self._status.set_text("Re-indexing\u2026")
+
+    def _worker(self, question: str) -> None:
+        assert self._rag is not None
+        rag = self._rag.clone_for_thread()
+        try:
+            for chunk in rag.ask_stream(question, cancel_cb=self._cancel.is_set):
+                GLib.idle_add(self._apply, chunk)
+            GLib.idle_add(self._done)
+        except Exception as exc:
+            GLib.idle_add(self._err, str(exc))
+        finally:
+            rag.close()
+
+    def _apply(self, c: dict) -> bool:
+        s = str(c.get("status", "")).strip()
+        if s:
+            self._status.set_text(s)
+        td = str(c.get("thinking_delta", ""))
+        if td:
+            b = self._thinking.get_buffer()
+            b.insert(b.get_end_iter(), td)
+        ad = str(c.get("answer_delta", ""))
+        if ad:
+            b = self._answer.get_buffer()
+            b.insert(b.get_end_iter(), ad)
+        sources = c.get("sources") or []
+        if sources:
+            self._sources.set_text("Sources: " + ", ".join(str(x) for x in sources))
+        if c.get("done"):
+            self._status.set_text("Cancelled" if c.get("cancelled") else "Done")
+        return False
+
+    def _done(self) -> bool:
+        self._running = False
+        self._ask_btn.set_sensitive(True)
+        self._cancel_btn.set_sensitive(False)
+        return False
+
+    def _err(self, msg: str) -> bool:
+        self._status.set_text(f"Error: {msg}")
+        self._done()
+        return False
+
+
+# --- Application ---
+
+
+class DesktopApplication(Adw.Application):
+    def __init__(self) -> None:
+        super().__init__(
+            application_id="pl.disconotes.app",
+            flags=Gio.ApplicationFlags.FLAGS_NONE,
+        )
+        self._repo: Optional[Repository] = None
+        self._rag_service: Optional[RagService] = None
+        self._window: Optional[NotesWindow] = None
+
+    def do_activate(self) -> None:
+        if self._window is None:
+            db_path = os.getenv("DISCO_NOTES_DB", _default_db_path())
+            self._repo = Repository(db_path)
+            self._rag_service = RagService(self._repo)
+            self._window = NotesWindow(self, self._repo, self._rag_service)
+        self._window.present()
+
+    def do_shutdown(self) -> None:
+        if self._repo is not None:
+            self._repo.close()
+            self._repo = None
+        Gio.Application.do_shutdown(self)
+
+
+def main() -> None:
+    app = DesktopApplication()
+    app.run(None)
+
+
+if __name__ == "__main__":
+    main()

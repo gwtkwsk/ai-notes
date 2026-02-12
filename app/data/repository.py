@@ -21,23 +21,29 @@ class Repository:
     def _init_schema(self) -> None:
         self._conn.executescript(SCHEMA_SQL)
         self._conn.commit()
+        # Migration: add is_favourite column for databases created before it existed.
+        try:
+            self._conn.execute("ALTER TABLE notes ADD COLUMN is_favourite INTEGER NOT NULL DEFAULT 0")
+            self._conn.commit()
+        except Exception:
+            pass  # column already exists
 
-    def create_note(self, title: str, content: str, is_markdown: bool) -> int:
+    def create_note(self, title: str, content: str) -> int:
         cur = self._conn.execute(
             "INSERT INTO notes(title, content, is_markdown) VALUES (?, ?, ?)",
-            (title, content, 1 if is_markdown else 0),
+            (title, content, 1),
         )
         self._conn.commit()
         return int(cur.lastrowid)
 
-    def update_note(self, note_id: int, title: str, content: str, is_markdown: bool) -> None:
+    def update_note(self, note_id: int, title: str, content: str) -> None:
         self._conn.execute(
             """
             UPDATE notes
             SET title = ?, content = ?, is_markdown = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
-            (title, content, 1 if is_markdown else 0, note_id),
+            (title, content, 1, note_id),
         )
         self._conn.commit()
 
@@ -50,9 +56,20 @@ class Repository:
         row = cur.fetchone()
         return dict(row) if row else None
 
-    def list_notes(self, filter_tag_ids: Optional[Iterable[int]] = None) -> List[dict]:
-        if filter_tag_ids:
-            ids = list(filter_tag_ids)
+    def list_notes(self, filter_tag_ids: Optional[Iterable[int]] = None, without_labels: bool = False) -> List[dict]:
+        ids = list(filter_tag_ids) if filter_tag_ids else []
+
+        if without_labels:
+            cur = self._conn.execute(
+                """
+                SELECT n.*
+                FROM notes n
+                LEFT JOIN note_tags nt ON nt.note_id = n.id
+                WHERE nt.note_id IS NULL
+                ORDER BY n.updated_at DESC
+                """
+            )
+        elif ids:
             placeholders = ",".join(["?"] * len(ids))
             query = f"""
                 SELECT n.*
@@ -123,6 +140,17 @@ class Repository:
             [(note_id, tag_id) for tag_id in tag_ids],
         )
         self._conn.commit()
+
+    def toggle_favourite(self, note_id: int) -> bool:
+        """Toggle the is_favourite flag. Returns the new value."""
+        cur = self._conn.execute("SELECT is_favourite FROM notes WHERE id = ?", (note_id,))
+        row = cur.fetchone()
+        if row is None:
+            return False
+        new_val = 0 if row["is_favourite"] else 1
+        self._conn.execute("UPDATE notes SET is_favourite = ? WHERE id = ?", (new_val, note_id))
+        self._conn.commit()
+        return bool(new_val)
 
     def upsert_note_embedding(self, note_id: int, vector_json: str) -> None:
         self._conn.execute(
