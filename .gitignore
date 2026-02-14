@@ -21,5 +21,13 @@ dist/
 build/
 *.egg-info/
 
+# Flatpak build artifacts
+.flatpak-builder/
+flatpak-build/
+flatpak-repo/
+flatpak/deps/
+*.flatpak
+build-dir/
+
 # Python tooling caches
 .mypy_cache/

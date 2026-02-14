@@ -1252,7 +1252,7 @@ class AskDialog(Adw.Window):
 class DesktopApplication(Adw.Application):
     def __init__(self) -> None:
         super().__init__(
-            application_id="pl.disconotes.app",
+            application_id="org.disco.DiscoNotes",
             flags=Gio.ApplicationFlags.FLAGS_NONE,
         )
         self._config: Optional[Config] = None

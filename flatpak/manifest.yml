@@ -1,0 +1,39 @@
+app-id: org.disco.DiscoNotes
+runtime: org.gnome.Platform
+runtime-version: "48"
+sdk: org.gnome.Sdk
+command: disco-notes-desktop
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --filesystem=xdg-data/disco-notes:create
+  - --own-name=org.disco.DiscoNotes
+modules:
+  - name: python3-dependencies
+    buildsystem: simple
+    sources:
+      - type: dir
+        path: deps
+    build-commands:
+          - pip3 install --no-index --find-links=. --prefix=/app --no-build-isolation --ignore-installed *.whl
+  - name: disco-notes
+    buildsystem: simple
+    sources:
+      - type: dir
+        path: ..
+        skip:
+          - .flatpak-builder
+          - flatpak-build
+          - flatpak-repo
+          - flatpak/deps
+          - build-dir
+          - .git
+          - __pycache__
+          - "*.egg-info"
+          - .venv
+    build-commands:
+      - pip3 install --no-index --prefix=/app --no-build-isolation --no-deps .
+      - install -Dm644 flatpak/org.disco.DiscoNotes.desktop /app/share/applications/org.disco.DiscoNotes.desktop

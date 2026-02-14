@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Disco Notes
+Comment=Note-taking app with RAG support
+Exec=disco-notes-desktop
+Icon=org.disco.DiscoNotes
+Terminal=false
+Categories=Office;Utility;
+StartupNotify=true
