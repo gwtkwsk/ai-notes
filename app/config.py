@@ -13,9 +13,7 @@ _CONFIG_VERSION = 1
 
 def _default_config_path() -> Path:
     """Get default config file path following XDG spec."""
-    config_home = Path(
-        os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")
-    )
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
     return config_home / "disco-notes" / "config.json"
 
 
@@ -44,12 +42,8 @@ class Config:
         """Return default configuration."""
         return {
             "version": _CONFIG_VERSION,
-            "ollama_base_url": os.getenv(
-                "OLLAMA_BASE_URL", "http://localhost:11434"
-            ),
-            "embed_model": os.getenv(
-                "OLLAMA_EMBED_MODEL", "qwen3-embedding:8b"
-            ),
+            "ollama_base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            "embed_model": os.getenv("OLLAMA_EMBED_MODEL", "qwen3-embedding:8b"),
             "llm_model": os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:7b"),
             "top_k": int(os.getenv("RAG_TOP_K", "5")),
         }

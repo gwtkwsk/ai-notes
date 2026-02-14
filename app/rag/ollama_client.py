@@ -28,14 +28,16 @@ class OllamaClient:
             "options": {
                 "temperature": 0.7,
                 "num_predict": 2048,
-            }
+            },
         }
         if system:
             payload["system"] = system
         data = self._post_json("/api/generate", payload)
         return data.get("response", "")
 
-    def generate_stream(self, prompt: str, system: str | None = None) -> Generator[str, None, None]:
+    def generate_stream(
+        self, prompt: str, system: str | None = None
+    ) -> Generator[str, None, None]:
         payload = {
             "model": self._llm_model,
             "prompt": prompt,
@@ -43,7 +45,7 @@ class OllamaClient:
             "options": {
                 "temperature": 0.7,
                 "num_predict": 2048,
-            }
+            },
         }
         if system:
             payload["system"] = system
@@ -51,7 +53,7 @@ class OllamaClient:
         body = json.dumps(payload).encode("utf-8")
         logger.info(f"Starting stream generation with model: {self._llm_model}")
         logger.debug(f"Prompt: {prompt[:200]}...")  # Log first 200 chars of prompt
-        
+
         full_response = []  # Collect full response for logging
         request = urllib.request.Request(
             url, data=body, headers={"Content-Type": "application/json"}, method="POST"
@@ -74,14 +76,16 @@ class OllamaClient:
                     yield chunk
                 if data.get("done") is True:
                     break
-        
+
         complete_response = "".join(full_response)
-        logger.info(f"Stream generation complete. Total length: {len(complete_response)} chars")
+        logger.info(
+            f"Stream generation complete. Total length: {len(complete_response)} chars"
+        )
         logger.info(f"Full model response:\n{complete_response}")
 
     def check_connection(self) -> tuple[bool, str]:
         """Check if Ollama server is accessible.
-        
+
         Returns:
             Tuple of (success: bool, message: str)
         """

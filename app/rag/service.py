@@ -44,7 +44,11 @@ class RagService:
         state = self._graph.invoke({"question": question})
         sources = [note.get("title", "Untitled") for note in state.get("contexts", [])]
         answer = state.get("answer", "")
-        return {"answer": answer, "thinking": "", "sources": sources[:self._config.top_k]}
+        return {
+            "answer": answer,
+            "thinking": "",
+            "sources": sources[: self._config.top_k],
+        }
 
     def ask_stream(self, question: str, cancel_cb=None, status_cb=None):
         logger.info(f"RAG query started: {question}")
@@ -53,7 +57,7 @@ class RagService:
         system, user_prompt = build_prompt(format_contexts(contexts), question)
         logger.debug(f"System message: {system}")
         logger.debug(f"User prompt (first 300 chars): {user_prompt[:300]}...")
-        
+
         for chunk in self._client.generate_stream(user_prompt, system=system):
             if cancel_cb is not None and cancel_cb():
                 logger.info("RAG query cancelled by user")
@@ -69,7 +73,7 @@ class RagService:
                 "thinking_delta": "",
                 "done": False,
             }
-        
+
         logger.info("RAG query completed successfully")
         yield {
             "answer_delta": "",

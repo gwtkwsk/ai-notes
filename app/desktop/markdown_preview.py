@@ -121,7 +121,9 @@ class MarkdownPreview(Gtk.ScrolledWindow):
             # Checkbox
             m = re.match(r"^(\s*)-\s+\[([ xX])\]\s*(.*)", line)
             if m:
-                self._add_checkbox(m.group(3), m.group(2).lower() == "x", len(m.group(1)))
+                self._add_checkbox(
+                    m.group(3), m.group(2).lower() == "x", len(m.group(1))
+                )
                 i += 1
                 continue
 

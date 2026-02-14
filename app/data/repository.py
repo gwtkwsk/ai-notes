@@ -26,7 +26,9 @@ class Repository:
         self._conn.commit()
         # Migration: add is_favourite column for databases created before it existed.
         try:
-            self._conn.execute("ALTER TABLE notes ADD COLUMN is_favourite INTEGER NOT NULL DEFAULT 0")
+            self._conn.execute(
+                "ALTER TABLE notes ADD COLUMN is_favourite INTEGER NOT NULL DEFAULT 0"
+            )
             self._conn.commit()
         except Exception:
             pass  # column already exists
@@ -71,7 +73,11 @@ class Repository:
         row = cur.fetchone()
         return dict(row) if row else None
 
-    def list_notes(self, filter_tag_ids: Optional[Iterable[int]] = None, without_labels: bool = False) -> List[dict]:
+    def list_notes(
+        self,
+        filter_tag_ids: Optional[Iterable[int]] = None,
+        without_labels: bool = False,
+    ) -> List[dict]:
         ids = list(filter_tag_ids) if filter_tag_ids else []
 
         if without_labels:
@@ -114,7 +120,9 @@ class Repository:
         )
         return [dict(row) for row in cur.fetchall()]
 
-    def search_notes_by_embedding(self, query_vector_json: str, top_k: int) -> List[dict]:
+    def search_notes_by_embedding(
+        self, query_vector_json: str, top_k: int
+    ) -> List[dict]:
         cur = self._conn.execute(
             """
             SELECT
@@ -177,12 +185,16 @@ class Repository:
 
     def toggle_favourite(self, note_id: int) -> bool:
         """Toggle the is_favourite flag. Returns the new value."""
-        cur = self._conn.execute("SELECT is_favourite FROM notes WHERE id = ?", (note_id,))
+        cur = self._conn.execute(
+            "SELECT is_favourite FROM notes WHERE id = ?", (note_id,)
+        )
         row = cur.fetchone()
         if row is None:
             return False
         new_val = 0 if row["is_favourite"] else 1
-        self._conn.execute("UPDATE notes SET is_favourite = ? WHERE id = ?", (new_val, note_id))
+        self._conn.execute(
+            "UPDATE notes SET is_favourite = ? WHERE id = ?", (new_val, note_id)
+        )
         self._conn.commit()
         return bool(new_val)
 
@@ -196,23 +208,22 @@ class Repository:
         new_name = new_name.strip()
         if not new_name:
             raise ValueError("Tag name cannot be empty")
-        
+
         # Check if name already exists (case-insensitive)
         cur = self._conn.execute(
             "SELECT id FROM tags WHERE LOWER(name) = LOWER(?) AND id != ?",
-            (new_name, tag_id)
+            (new_name, tag_id),
         )
         if cur.fetchone():
             raise ValueError(f"Tag '{new_name}' already exists")
-        
+
         self._conn.execute("UPDATE tags SET name = ? WHERE id = ?", (new_name, tag_id))
         self._conn.commit()
 
     def get_tag_usage_count(self, tag_id: int) -> int:
         """Return the number of notes using this tag."""
         cur = self._conn.execute(
-            "SELECT COUNT(*) as cnt FROM note_tags WHERE tag_id = ?",
-            (tag_id,)
+            "SELECT COUNT(*) as cnt FROM note_tags WHERE tag_id = ?", (tag_id,)
         )
         row = cur.fetchone()
         return int(row["cnt"]) if row else 0

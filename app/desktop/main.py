@@ -37,9 +37,7 @@ _CSS = """\
 
 
 def _default_db_path() -> str:
-    data_home = Path(
-        os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")
-    )
+    data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
     app_dir = data_home / "disco-notes"
     app_dir.mkdir(parents=True, exist_ok=True)
     return str(app_dir / "notes.db")
@@ -86,46 +84,40 @@ class NotesWindow(Adw.ApplicationWindow):
         sidebar_tv = Adw.ToolbarView()
         sidebar_hb = Adw.HeaderBar()
         sidebar_hb.set_show_end_title_buttons(False)
-        sidebar_hb.set_title_widget(
-            Adw.WindowTitle(title="Labels", subtitle="")
-        )
-        
+        sidebar_hb.set_title_widget(Adw.WindowTitle(title="Labels", subtitle=""))
+
         # Hamburger menu
         hamburger = Gtk.MenuButton(icon_name="open-menu-symbolic")
         hamburger.set_tooltip_text("Menu")
-        
+
         menu = Gio.Menu()
         menu.append("Re-index Notes", "win.reindex")
         menu.append("Preferences", "win.preferences")
         menu.append("Keyboard Shortcuts", "win.show-help-overlay")
         hamburger.set_menu_model(menu)
-        
+
         reindex_action = Gio.SimpleAction.new("reindex", None)
         reindex_action.connect("activate", lambda *_: self._start_reindex())
         self.add_action(reindex_action)
-        
+
         pref_action = Gio.SimpleAction.new("preferences", None)
         pref_action.connect("activate", self._on_preferences_clicked)
         self.add_action(pref_action)
-        
+
         sidebar_hb.pack_end(hamburger)
         sidebar_tv.add_top_bar(sidebar_hb)
 
         sidebar_scroll = Gtk.ScrolledWindow()
-        sidebar_scroll.set_policy(
-            Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC
-        )
+        sidebar_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         sidebar_scroll.set_size_request(280, -1)
 
         self._labels_list = Gtk.ListBox()
         self._labels_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self._labels_list.add_css_class("navigation-sidebar")
-        self._labels_list.connect(
-            "row-selected", self._on_label_selected
-        )
+        self._labels_list.connect("row-selected", self._on_label_selected)
         sidebar_scroll.set_child(self._labels_list)
         sidebar_tv.set_content(sidebar_scroll)
-        
+
         # Sidebar container with separator
         sidebar_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         sidebar_box.append(sidebar_tv)
@@ -138,9 +130,7 @@ class NotesWindow(Adw.ApplicationWindow):
         self._content_header = Adw.HeaderBar()
         self._content_header.set_show_start_title_buttons(False)
 
-        self._window_title = Adw.WindowTitle(
-            title="All Notes", subtitle=""
-        )
+        self._window_title = Adw.WindowTitle(title="All Notes", subtitle="")
         self._content_header.set_title_widget(self._window_title)
         content_tv.add_top_bar(self._content_header)
 
@@ -149,9 +139,7 @@ class NotesWindow(Adw.ApplicationWindow):
         self._new_button.set_tooltip_text("New Note")
         self._new_button.connect("clicked", self._on_new_clicked)
 
-        self._search_button = Gtk.Button(
-            icon_name="system-search-symbolic"
-        )
+        self._search_button = Gtk.Button(icon_name="system-search-symbolic")
         self._search_button.set_tooltip_text("Search (RAG)")
         self._search_button.connect("clicked", self._on_open_ask_clicked)
 
@@ -162,13 +150,13 @@ class NotesWindow(Adw.ApplicationWindow):
         # Toggle group for preview/edit (linked group)
         self._view_toggle_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         self._view_toggle_box.add_css_class("linked")
-        
+
         self._preview_toggle = Gtk.ToggleButton()
         self._preview_toggle.set_icon_name("view-reveal-symbolic")
         self._preview_toggle.set_tooltip_text("Preview")
         self._preview_toggle.connect("toggled", self._on_preview_toggled)
         self._view_toggle_box.append(self._preview_toggle)
-        
+
         self._edit_toggle = Gtk.ToggleButton()
         self._edit_toggle.set_icon_name("document-edit-symbolic")
         self._edit_toggle.set_tooltip_text("Edit")
@@ -179,17 +167,17 @@ class NotesWindow(Adw.ApplicationWindow):
         # Action buttons group (linked)
         self._actions_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         self._actions_box.add_css_class("linked")
-        
+
         self._save_button = Gtk.Button(icon_name="document-save-symbolic")
         self._save_button.set_tooltip_text("Save")
         self._save_button.connect("clicked", self._on_save_clicked)
         self._actions_box.append(self._save_button)
-        
+
         self._favourite_button = Gtk.Button(icon_name="starred-symbolic")
         self._favourite_button.set_tooltip_text("Add to Favourites")
         self._favourite_button.connect("clicked", self._on_toggle_favourite)
         self._actions_box.append(self._favourite_button)
-        
+
         self._delete_button = Gtk.Button(icon_name="user-trash-symbolic")
         self._delete_button.set_tooltip_text("Delete Note")
         self._delete_button.connect("clicked", self._on_delete_clicked)
@@ -205,9 +193,7 @@ class NotesWindow(Adw.ApplicationWindow):
 
         # -- List --
         list_scroll = Gtk.ScrolledWindow()
-        list_scroll.set_policy(
-            Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC
-        )
+        list_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         self._notes_sections_box = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL, spacing=22
         )
@@ -228,18 +214,12 @@ class NotesWindow(Adw.ApplicationWindow):
         self._content_stack.add_named(self._md_preview, "preview")
 
         # -- Editor --
-        editor_outer = Gtk.Box(
-            orientation=Gtk.Orientation.VERTICAL, spacing=0
-        )
+        editor_outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         editor_scroll = Gtk.ScrolledWindow()
-        editor_scroll.set_policy(
-            Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC
-        )
+        editor_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         editor_scroll.set_vexpand(True)
 
-        editor_box = Gtk.Box(
-            orientation=Gtk.Orientation.VERTICAL, spacing=8
-        )
+        editor_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         editor_box.set_margin_top(16)
         editor_box.set_margin_bottom(16)
         editor_box.set_margin_start(16)
@@ -253,18 +233,16 @@ class NotesWindow(Adw.ApplicationWindow):
         # Tags toolbar with linked controls
         self._tags_toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         self._tags_toolbar.add_css_class("linked")
-        
+
         self._tags_add_entry = Gtk.Entry()
         self._tags_add_entry.set_placeholder_text("Add label...")
         self._tags_add_entry.connect("activate", self._on_add_tag)
         self._tags_toolbar.append(self._tags_add_entry)
-        
+
         editor_box.append(self._tags_toolbar)
 
         text_scroll = Gtk.ScrolledWindow()
-        text_scroll.set_policy(
-            Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC
-        )
+        text_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         text_scroll.set_vexpand(True)
         text_scroll.set_hexpand(True)
 
@@ -366,7 +344,7 @@ class NotesWindow(Adw.ApplicationWindow):
         if self._current_note_id:
             note = self._repo.get_note(self._current_note_id)
             is_fav = bool(note and note.get("is_favourite"))
-        
+
         if is_fav:
             self._favourite_button.set_icon_name("starred-symbolic")
             self._favourite_button.set_tooltip_text("Remove from Favourites")
@@ -415,9 +393,7 @@ class NotesWindow(Adw.ApplicationWindow):
 
     # -- Note row activation (list -> preview) --
 
-    def _on_note_row_activated(
-        self, _lb: Gtk.ListBox, row: Gtk.ListBoxRow
-    ) -> None:
+    def _on_note_row_activated(self, _lb: Gtk.ListBox, row: Gtk.ListBoxRow) -> None:
         note_id = getattr(row, "note_id", None)
         if note_id is None:
             return
@@ -455,9 +431,9 @@ class NotesWindow(Adw.ApplicationWindow):
         row_to_select: Optional[Gtk.ListBoxRow] = None
         for label, ftype, tid, cnt, icon_name in entries:
             row = Gtk.ListBoxRow()
-            row.filter_type = ftype    # type: ignore[attr-defined]
-            row.tag_id = tid           # type: ignore[attr-defined]
-            row.filter_title = label   # type: ignore[attr-defined]
+            row.filter_type = ftype  # type: ignore[attr-defined]
+            row.tag_id = tid  # type: ignore[attr-defined]
+            row.filter_title = label  # type: ignore[attr-defined]
 
             box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
             box.set_margin_top(8)
@@ -468,7 +444,7 @@ class NotesWindow(Adw.ApplicationWindow):
             if icon_name:
                 icon = Gtk.Image.new_from_icon_name(icon_name)
                 box.append(icon)
-                
+
             name_lbl = Gtk.Label(label=label)
             name_lbl.set_xalign(0)
             name_lbl.set_hexpand(True)
@@ -480,17 +456,21 @@ class NotesWindow(Adw.ApplicationWindow):
             box.append(name_lbl)
             box.append(count_lbl)
             row.set_child(box)
-            
+
             # Add right-click menu for tags
             if ftype == "tag":
                 gesture = Gtk.GestureClick.new()
                 gesture.set_button(3)  # Right mouse button
                 gesture.connect("pressed", self._on_tag_right_click, tid, label)
                 row.add_controller(gesture)
-            
+
             self._labels_list.append(row)
 
-            if ftype == "all" and not self._without_labels_filter and self._selected_tag_id is None:
+            if (
+                ftype == "all"
+                and not self._without_labels_filter
+                and self._selected_tag_id is None
+            ):
                 row_to_select = row
             elif ftype == "without" and self._without_labels_filter:
                 row_to_select = row
@@ -513,21 +493,25 @@ class NotesWindow(Adw.ApplicationWindow):
     ) -> None:
         """Show context menu for tag."""
         popover = Gtk.PopoverMenu()
-        
+
         menu = Gio.Menu()
         menu.append("Rename Tag", f"win.rename-tag-{tag_id}")
         menu.append("Delete Tag", f"win.delete-tag-{tag_id}")
         popover.set_menu_model(menu)
-        
+
         # Create actions for this specific tag
         rename_action = Gio.SimpleAction.new(f"rename-tag-{tag_id}", None)
-        rename_action.connect("activate", lambda *_: self._on_rename_tag_clicked(tag_id, tag_name))
+        rename_action.connect(
+            "activate", lambda *_: self._on_rename_tag_clicked(tag_id, tag_name)
+        )
         self.add_action(rename_action)
-        
+
         delete_action = Gio.SimpleAction.new(f"delete-tag-{tag_id}", None)
-        delete_action.connect("activate", lambda *_: self._on_delete_tag_clicked(tag_id, tag_name))
+        delete_action.connect(
+            "activate", lambda *_: self._on_delete_tag_clicked(tag_id, tag_name)
+        )
         self.add_action(delete_action)
-        
+
         # Position popover at click location
         rect = Gdk.Rectangle()
         rect.x = int(x)
@@ -541,9 +525,9 @@ class NotesWindow(Adw.ApplicationWindow):
     def _on_rename_tag_clicked(self, tag_id: int, tag_name: str) -> None:
         """Show dialog to rename tag."""
         dialog = Adw.MessageDialog.new(self)
-        dialog.set_heading(f"Rename tag \"{tag_name}\"")
+        dialog.set_heading(f'Rename tag "{tag_name}"')
         dialog.set_body("Enter a new name for this tag:")
-        
+
         # Create entry for new name
         entry = Gtk.Entry()
         entry.set_text(tag_name)
@@ -551,22 +535,25 @@ class NotesWindow(Adw.ApplicationWindow):
         entry.set_margin_bottom(12)
         entry.set_margin_start(12)
         entry.set_margin_end(12)
-        
+
         # Add entry to dialog's extra child
         dialog.set_extra_child(entry)
-        
+
         dialog.add_response("cancel", "Cancel")
         dialog.add_response("rename", "Rename")
         dialog.set_response_appearance("rename", Adw.ResponseAppearance.SUGGESTED)
         dialog.set_default_response("rename")
         dialog.set_close_response("cancel")
-        
-        dialog.connect("response", lambda d, r: self._on_confirm_rename_tag(r, tag_id, entry.get_text()))
-        
+
+        dialog.connect(
+            "response",
+            lambda d, r: self._on_confirm_rename_tag(r, tag_id, entry.get_text()),
+        )
+
         # Select all text for easy replacement
         entry.grab_focus()
         entry.select_region(0, -1)
-        
+
         dialog.present()
 
     def _on_confirm_rename_tag(self, response: str, tag_id: int, new_name: str) -> None:
@@ -580,16 +567,16 @@ class NotesWindow(Adw.ApplicationWindow):
         if not new_name:
             self._toast("Tag name cannot be empty")
             return
-        
+
         try:
             self._repo.rename_tag(tag_id, new_name)
-            self._toast(f"Renamed tag to \"{new_name}\"")
-            
+            self._toast(f'Renamed tag to "{new_name}"')
+
             # Update selected filter name if this tag is currently selected
             if self._selected_tag_id == tag_id:
                 self._selected_filter_name = new_name
                 self._set_mode(self._content_stack.get_visible_child_name())
-            
+
             self._reload_sidebar()
         except ValueError as exc:
             self._toast(str(exc))
@@ -599,11 +586,11 @@ class NotesWindow(Adw.ApplicationWindow):
     def _on_delete_tag_clicked(self, tag_id: int, tag_name: str) -> None:
         """Delete a tag with confirmation."""
         usage_count = self._repo.get_tag_usage_count(tag_id)
-        
+
         if usage_count > 0:
             # Show confirmation dialog
             dialog = Adw.MessageDialog.new(self)
-            dialog.set_heading(f"Delete tag \"{tag_name}\"?")
+            dialog.set_heading(f'Delete tag "{tag_name}"?')
             dialog.set_body(
                 f"This tag is used by {usage_count} note(s). "
                 "Deleting it will remove the tag from all notes."
@@ -613,7 +600,10 @@ class NotesWindow(Adw.ApplicationWindow):
             dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
             dialog.set_default_response("cancel")
             dialog.set_close_response("cancel")
-            dialog.connect("response", lambda d, r: self._on_confirm_delete_tag(r, tag_id, tag_name))
+            dialog.connect(
+                "response",
+                lambda d, r: self._on_confirm_delete_tag(r, tag_id, tag_name),
+            )
             dialog.present()
         else:
             # Delete without confirmation if not used
@@ -628,15 +618,15 @@ class NotesWindow(Adw.ApplicationWindow):
         """Actually delete the tag."""
         try:
             self._repo.delete_tag(tag_id)
-            self._toast(f"Deleted tag \"{tag_name}\"")
-            
+            self._toast(f'Deleted tag "{tag_name}"')
+
             # If this was the selected tag, switch to "All Notes"
             if self._selected_tag_id == tag_id:
                 self._selected_tag_id = None
                 self._without_labels_filter = False
                 self._selected_filter_name = "All Notes"
                 self._reload_notes_list()
-            
+
             self._reload_sidebar()
         except Exception as exc:
             self._toast(f"Error deleting tag: {exc}")
@@ -675,7 +665,9 @@ class NotesWindow(Adw.ApplicationWindow):
         self._clear_box(self._notes_sections_box)
 
         tag_ids = [self._selected_tag_id] if self._selected_tag_id else None
-        notes = self._repo.list_notes(tag_ids, without_labels=self._without_labels_filter)
+        notes = self._repo.list_notes(
+            tag_ids, without_labels=self._without_labels_filter
+        )
 
         favourites = [n for n in notes if n.get("is_favourite")]
         others = [n for n in notes if not n.get("is_favourite")]
@@ -827,29 +819,29 @@ class NotesWindow(Adw.ApplicationWindow):
         """Add a tag button to the toolbar."""
         if not tag_name.strip():
             return
-        
+
         # Check if tag already exists
         for tag in self._get_current_tags():
             if tag.lower() == tag_name.lower():
                 return
-        
+
         # Create button with AdwButtonContent
         tag_btn = Gtk.Button()
         tag_btn.set_has_frame(True)
-        
+
         btn_content = Adw.ButtonContent()
         btn_content.set_label(tag_name)
         btn_content.set_icon_name("edit-delete-symbolic")
         tag_btn.set_child(btn_content)
-        
+
         tag_btn.connect("clicked", lambda _: self._remove_tag_chip(tag_btn))
-        
+
         self._tags_toolbar.append(tag_btn)
-    
+
     def _remove_tag_chip(self, tag_widget: Gtk.Widget) -> None:
         """Remove a tag button from the toolbar."""
         self._tags_toolbar.remove(tag_widget)
-    
+
     def _clear_tag_chips(self) -> None:
         """Remove all tag buttons."""
         child = self._tags_toolbar.get_first_child()
@@ -859,7 +851,7 @@ class NotesWindow(Adw.ApplicationWindow):
             if child != self._tags_add_entry:
                 self._tags_toolbar.remove(child)
             child = next_child
-    
+
     def _get_current_tags(self) -> list[str]:
         """Get list of current tag names from buttons."""
         tags = []
@@ -872,7 +864,7 @@ class NotesWindow(Adw.ApplicationWindow):
                     tags.append(btn_content.get_label())
             child = child.get_next_sibling()
         return tags
-    
+
     def _on_add_tag(self, entry: Gtk.Entry) -> None:
         """Add new tag from entry."""
         tag_name = entry.get_text().strip()
@@ -919,7 +911,12 @@ class NotesWindow(Adw.ApplicationWindow):
             ("H", None, "Heading", self._fmt_heading),
             (None, "format-text-bold-symbolic", "Bold", self._fmt_bold),
             (None, "format-text-italic-symbolic", "Italic", self._fmt_italic),
-            (None, "format-text-strikethrough-symbolic", "Strikethrough", self._fmt_strike),
+            (
+                None,
+                "format-text-strikethrough-symbolic",
+                "Strikethrough",
+                self._fmt_strike,
+            ),
             ("\u2022", None, "Bullet list", self._fmt_bullet),
             ("1.", None, "Numbered list", self._fmt_ordered),
             ("\u2611", None, "Checkbox", self._fmt_checkbox),
@@ -934,11 +931,7 @@ class NotesWindow(Adw.ApplicationWindow):
             button.connect("clicked", lambda _: callback())
 
         for label, icon, tooltip, cb in items:
-            btn = (
-                Gtk.Button(icon_name=icon)
-                if icon
-                else Gtk.Button(label=label)
-            )
+            btn = Gtk.Button(icon_name=icon) if icon else Gtk.Button(label=label)
             btn.set_tooltip_text(tooltip)
             _connect_callback(btn, cb)
             linked.append(btn)
@@ -1062,7 +1055,9 @@ class NotesWindow(Adw.ApplicationWindow):
             self._rag_service = RagService(self._repo, self._config)
             GLib.idle_add(lambda: (self._toast("Preferences saved"), False))
         except Exception as exc:
-            GLib.idle_add(lambda: (self._toast(f"Error reloading RAG service: {exc}"), False))
+            GLib.idle_add(
+                lambda: (self._toast(f"Error reloading RAG service: {exc}"), False)
+            )
 
     # -- RAG --
 
@@ -1122,13 +1117,13 @@ class AskDialog(Adw.Window):
         tv = Adw.ToolbarView()
         header = Adw.HeaderBar()
         tv.add_top_bar(header)
-        
+
         # Progress bar with OSD style (attached to top, right below header)
         self._progress = Gtk.ProgressBar()
         self._progress.add_css_class("osd")
         self._progress.set_visible(False)
         tv.add_top_bar(self._progress)
-        
+
         # Query toolbar with linked controls
         query_toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         query_toolbar.add_css_class("toolbar")
@@ -1136,28 +1131,28 @@ class AskDialog(Adw.Window):
         query_toolbar.set_margin_bottom(6)
         query_toolbar.set_margin_start(6)
         query_toolbar.set_margin_end(6)
-        
+
         # Linked controls: Entry | Ask | Cancel
         linked_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         linked_box.add_css_class("linked")
         linked_box.set_hexpand(True)
-        
+
         self._entry = Gtk.Entry()
         self._entry.set_placeholder_text("Ask a question about your notes\u2026")
         self._entry.connect("activate", self._on_ask)
         self._entry.set_hexpand(True)
         linked_box.append(self._entry)
-        
+
         self._ask_btn = Gtk.Button(label="Ask")
         self._ask_btn.add_css_class("suggested-action")
         self._ask_btn.connect("clicked", self._on_ask)
         linked_box.append(self._ask_btn)
-        
+
         self._cancel_btn = Gtk.Button(label="Cancel")
         self._cancel_btn.set_sensitive(False)
         self._cancel_btn.connect("clicked", self._on_cancel)
         linked_box.append(self._cancel_btn)
-        
+
         query_toolbar.append(linked_box)
         tv.add_top_bar(query_toolbar)
 

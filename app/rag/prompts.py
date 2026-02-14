@@ -1,14 +1,15 @@
 """Shared prompt templates for RAG."""
+
 from typing import Dict, List, Tuple
 
 
 def build_prompt(contexts: str, question: str) -> Tuple[str, str]:
     """Build the system message and user prompt for the LLM.
-    
+
     Args:
         contexts: Formatted context from retrieved notes
         question: User's question
-        
+
     Returns:
         Tuple of (system_message, user_prompt)
     """
@@ -19,22 +20,22 @@ def build_prompt(contexts: str, question: str) -> Tuple[str, str]:
         "IMPORTANT: Think step-by-step. First explain your reasoning, then provide the final answer. "
         "Show your work and thought process."
     )
-    
+
     user = (
         f"Notes:\n{contexts}\n\n"
         f"Question: {question}\n\n"
         "Let me think through this step-by-step:"
     )
-    
+
     return system, user
 
 
 def format_contexts(contexts: List[Dict]) -> str:
     """Format retrieved note contexts into a string.
-    
+
     Args:
         contexts: List of note dictionaries with 'title' and 'content'
-        
+
     Returns:
         Formatted string with numbered notes
     """

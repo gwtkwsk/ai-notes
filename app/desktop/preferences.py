@@ -64,7 +64,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self._status_label = Gtk.Label(label="Not tested")
         self._status_label.add_css_class("dimmed")
         test_row.add_suffix(self._status_label)
-        
+
         self._test_button = Gtk.Button(label="Test Connection")
         self._test_button.add_css_class("pill")
         self._test_button.set_valign(Gtk.Align.CENTER)
