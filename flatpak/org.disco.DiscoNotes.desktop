@@ -2,7 +2,7 @@
 Type=Application
 Name=Disco Notes
 Comment=Note-taking app with RAG support
-Exec=disco-notes-desktop
+Exec=disco-notes
 Icon=org.disco.DiscoNotes
 Terminal=false
 Categories=Office;Utility;

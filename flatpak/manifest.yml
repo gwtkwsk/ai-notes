@@ -2,7 +2,7 @@ app-id: org.disco.DiscoNotes
 runtime: org.gnome.Platform
 runtime-version: "48"
 sdk: org.gnome.Sdk
-command: disco-notes-desktop
+command: disco-notes
 finish-args:
   - --share=network
   - --share=ipc

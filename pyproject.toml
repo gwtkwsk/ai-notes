@@ -9,8 +9,16 @@ dependencies = [
   "sqlite-vec>=0.1.6",
 ]
 
+[dependency-groups]
+dev = [
+  "pytest>=7.4",
+  "ruff",
+  "pyright",
+  "pip>=26.0.1",
+]
+
 [project.scripts]
-disco-notes-desktop = "app.desktop.main:main"
+disco-notes = "app.desktop.main:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
@@ -39,7 +47,7 @@ ignore = ["E203"]
 
 [tool.pyright]
 include = ["app", "tests"]
-exclude = ["**/node_modules", "**/__pycache__", "build", "dist"]
+exclude = ["**/node_modules", "**/__pycache__", "build"]
 
 pythonVersion = "3.12"
 pythonPlatform = "Linux"
@@ -47,11 +55,3 @@ typeCheckingMode = "standard"
 
 reportMissingImports = true
 reportMissingTypeStubs = false
-
-[dependency-groups]
-dev = [
-  "pytest>=7.4",
-  "ruff",
-  "pyright",
-  "pip>=26.0.1",
-]
