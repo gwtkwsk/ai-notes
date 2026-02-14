@@ -1,4 +1,5 @@
 from app.data.repository import Repository
+import json
 
 
 def test_create_update_and_tags(tmp_path):
@@ -118,4 +119,21 @@ def test_rename_tag(tmp_path):
     except ValueError as e:
         assert "cannot be empty" in str(e)
     
+    repo.close()
+
+
+def test_search_notes_by_embedding(tmp_path):
+    db_path = tmp_path / "notes.db"
+    repo = Repository(str(db_path))
+
+    note_a = repo.create_note("A", "Alpha")
+    note_b = repo.create_note("B", "Beta")
+
+    repo.upsert_note_embedding(note_a, json.dumps([1.0, 0.0, 0.0]))
+    repo.upsert_note_embedding(note_b, json.dumps([0.0, 1.0, 0.0]))
+
+    results = repo.search_notes_by_embedding(json.dumps([1.0, 0.0, 0.0]), top_k=1)
+    assert len(results) == 1
+    assert results[0]["id"] == note_a
+
     repo.close()

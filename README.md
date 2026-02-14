@@ -24,6 +24,14 @@ Run desktop app:
 python3 desktop.py
 ```
 
+Install Python dependencies for the interpreter used to run the app (includes `sqlite-vec` required by RAG search):
+
+```bash
+uv sync --extra dev
+```
+
+If you run `python3 desktop.py` outside the `uv` environment, ensure that interpreter also has `sqlite-vec` available.
+
 The app stores data in:
 
 ```text

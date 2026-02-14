@@ -10,7 +10,12 @@ class FakeOllama(OllamaClient):
         pass
 
     def embed(self, text: str):
-        return [float(len(text) % 5), 1.0, 0.5]
+        lowered = text.lower()
+        if "python" in lowered:
+            return [1.0, 0.0, 0.0]
+        if "sql" in lowered or "sqlite" in lowered:
+            return [0.0, 1.0, 0.0]
+        return [0.0, 0.0, 1.0]
 
     def generate(self, prompt: str) -> str:
         return "ok"
@@ -18,7 +23,8 @@ class FakeOllama(OllamaClient):
 
 def test_build_index_and_query(tmp_path):
     repo = Repository(str(tmp_path / "notes.db"))
-    note_id = repo.create_note("Title", "Body")
+    note_id = repo.create_note("Python note", "Python tips")
+    other_id = repo.create_note("SQL note", "SQLite basics")
     index = RagIndex(repo, FakeOllama())
 
     index.build_index()
@@ -27,7 +33,12 @@ def test_build_index_and_query(tmp_path):
     vector = json.loads(stored["vector_json"])
     assert vector
 
-    results = index.query("question")
+    results = index.query("python question", top_k=1)
     assert len(results) == 1
+    assert results[0]["id"] == note_id
+
+    sql_results = index.query("sql question", top_k=1)
+    assert len(sql_results) == 1
+    assert sql_results[0]["id"] == other_id
 
     repo.close()

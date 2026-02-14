@@ -1,6 +1,8 @@
 import sqlite3
 from typing import Iterable, List, Optional
 
+import sqlite_vec
+
 from app.data.schema import SCHEMA_SQL
 
 
@@ -9,6 +11,7 @@ class Repository:
         self._db_path = db_path
         self._conn = sqlite3.connect(db_path)
         self._conn.row_factory = sqlite3.Row
+        self._load_sqlite_vec()
         self._init_schema()
 
     @property
@@ -27,6 +30,17 @@ class Repository:
             self._conn.commit()
         except Exception:
             pass  # column already exists
+
+    def _load_sqlite_vec(self) -> None:
+        try:
+            self._conn.enable_load_extension(True)
+            sqlite_vec.load(self._conn)
+            self._conn.enable_load_extension(False)
+            self._conn.execute("SELECT vec_version()")
+        except Exception as exc:
+            raise RuntimeError(
+                "sqlite-vec is required for RAG vector search, but could not be loaded in SQLite"
+            ) from exc
 
     def create_note(self, title: str, content: str) -> int:
         cur = self._conn.execute(
@@ -96,6 +110,24 @@ class Repository:
             FROM notes n
             LEFT JOIN note_embeddings ne ON ne.note_id = n.id
             """
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+    def search_notes_by_embedding(self, query_vector_json: str, top_k: int) -> List[dict]:
+        cur = self._conn.execute(
+            """
+            SELECT
+                n.id,
+                n.title,
+                n.content,
+                n.is_markdown,
+                vec_distance_cosine(ne.vector_json, ?) AS cosine_distance
+            FROM notes n
+            JOIN note_embeddings ne ON ne.note_id = n.id
+            ORDER BY cosine_distance ASC
+            LIMIT ?
+            """,
+            (query_vector_json, top_k),
         )
         return [dict(row) for row in cur.fetchall()]
 
@@ -194,4 +226,8 @@ class Repository:
             """,
             (note_id, vector_json),
         )
+        self._conn.commit()
+
+    def clear_embeddings(self) -> None:
+        self._conn.execute("DELETE FROM note_embeddings")
         self._conn.commit()
