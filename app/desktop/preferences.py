@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Optional
 import threading
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gtk, GLib  # noqa: E402
+from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 if TYPE_CHECKING:
     from app.config import Config
@@ -23,7 +24,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self,
         parent: Gtk.Window,
         config: Config,
-        on_save: Optional[Callable[[], None]] = None,
+        on_save: Callable[[], None] | None = None,
     ) -> None:
         super().__init__()
         self._config = config

@@ -9,6 +9,8 @@
 
 - When working with Python ensure you use a virtual environment managed by uv.
 - Manage Python dependencies using uv, without pip.
+- After introducing code changes always run tests and linters.
+- Use type hints in Python code everywhere.
 
 # Running tests
 

@@ -1,7 +1,9 @@
+
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Dict, List
+from collections.abc import Callable, Iterator
+from typing import TYPE_CHECKING, Any
 
 from app.data.repository import Repository
 from app.rag.index import RagIndex
@@ -25,12 +27,16 @@ class RagService:
             config.llm_model,
         )
         self._index = RagIndex(repo, self._client)
-        self._graph = None
 
-    def build_index(self, progress_cb=None) -> int:
+        self._graph: Any | None = None
+
+    def build_index(
+        self,
+        progress_cb: Callable[[int, int, dict], None] | None = None,
+    ) -> int:
         return self._index.build_index(progress_cb)
 
-    def ask(self, question: str) -> Dict[str, List[str] | str]:
+    def ask(self, question: str) -> dict[str, list[str] | str]:
         if self._graph is None:
             try:
                 from app.rag.langgraph_rag import build_graph
@@ -41,6 +47,7 @@ class RagService:
                 ) from exc
             self._graph = build_graph(self._index, self._client)
 
+        assert self._graph is not None
         state = self._graph.invoke({"question": question})
         sources = [note.get("title", "Untitled") for note in state.get("contexts", [])]
         answer = state.get("answer", "")
@@ -50,7 +57,12 @@ class RagService:
             "sources": sources[: self._config.top_k],
         }
 
-    def ask_stream(self, question: str, cancel_cb=None, status_cb=None):
+    def ask_stream(
+        self,
+        question: str,
+        cancel_cb: Callable[[], bool] | None = None,
+        status_cb: Callable[[str], None] | None = None,
+    ) -> Iterator[dict]:
         logger.info(f"RAG query started: {question}")
         contexts = self._index.query(question, status_cb=status_cb)
         logger.info(f"Retrieved {len(contexts)} context documents")
@@ -81,7 +93,7 @@ class RagService:
             "done": True,
         }
 
-    def clone_for_thread(self) -> "RagService":
+    def clone_for_thread(self) -> RagService:
         repo = Repository(self._db_path)
         return RagService(repo, self._config)
 

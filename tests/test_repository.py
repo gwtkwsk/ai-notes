@@ -1,8 +1,10 @@
-from app.data.repository import Repository
 import json
+from pathlib import Path
+
+from app.data.repository import Repository
 
 
-def test_create_update_and_tags(tmp_path):
+def test_create_update_and_tags(tmp_path: Path) -> None:
     db_path = tmp_path / "notes.db"
     repo = Repository(str(db_path))
 
@@ -41,7 +43,7 @@ def test_create_update_and_tags(tmp_path):
     repo.close()
 
 
-def test_delete_tag(tmp_path):
+def test_delete_tag(tmp_path: Path) -> None:
     db_path = tmp_path / "notes.db"
     repo = Repository(str(db_path))
 
@@ -81,7 +83,7 @@ def test_delete_tag(tmp_path):
     repo.close()
 
 
-def test_rename_tag(tmp_path):
+def test_rename_tag(tmp_path: Path) -> None:
     db_path = tmp_path / "notes.db"
     repo = Repository(str(db_path))
 
@@ -110,21 +112,21 @@ def test_rename_tag(tmp_path):
     # Test duplicate name rejection
     try:
         repo.rename_tag(python_id, "testing")
-        assert False, "Should have raised ValueError for duplicate name"
+        raise AssertionError("Should have raised ValueError for duplicate name")
     except ValueError as e:
         assert "already exists" in str(e)
 
     # Test empty name rejection
     try:
         repo.rename_tag(python_id, "")
-        assert False, "Should have raised ValueError for empty name"
+        raise AssertionError("Should have raised ValueError for empty name")
     except ValueError as e:
         assert "cannot be empty" in str(e)
 
     repo.close()
 
 
-def test_search_notes_by_embedding(tmp_path):
+def test_search_notes_by_embedding(tmp_path: Path) -> None:
     db_path = tmp_path / "notes.db"
     repo = Repository(str(db_path))
 

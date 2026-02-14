@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from app.data.repository import Repository
 from app.rag.index import RagIndex
@@ -6,10 +7,10 @@ from app.rag.ollama_client import OllamaClient
 
 
 class FakeOllama(OllamaClient):
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
-    def embed(self, text: str):
+    def embed(self, text: str) -> list[float]:
         lowered = text.lower()
         if "python" in lowered:
             return [1.0, 0.0, 0.0]
@@ -21,7 +22,7 @@ class FakeOllama(OllamaClient):
         return "ok"
 
 
-def test_build_index_and_query(tmp_path):
+def test_build_index_and_query(tmp_path: Path) -> None:
     repo = Repository(str(tmp_path / "notes.db"))
     note_id = repo.create_note("Python note", "Python tips")
     other_id = repo.create_note("SQL note", "SQLite basics")

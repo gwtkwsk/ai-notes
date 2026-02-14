@@ -1,5 +1,5 @@
 import sqlite3
-from typing import Iterable, List, Optional
+from collections.abc import Iterable
 
 import sqlite_vec
 
@@ -41,7 +41,8 @@ class Repository:
             self._conn.execute("SELECT vec_version()")
         except Exception as exc:
             raise RuntimeError(
-                "sqlite-vec is required for RAG vector search, but could not be loaded in SQLite"
+                "sqlite-vec is required for RAG vector search, but could not "
+                "be loaded in SQLite"
             ) from exc
 
     def create_note(self, title: str, content: str) -> int:
@@ -68,16 +69,16 @@ class Repository:
         self._conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
         self._conn.commit()
 
-    def get_note(self, note_id: int) -> Optional[dict]:
+    def get_note(self, note_id: int) -> dict | None:
         cur = self._conn.execute("SELECT * FROM notes WHERE id = ?", (note_id,))
         row = cur.fetchone()
         return dict(row) if row else None
 
     def list_notes(
         self,
-        filter_tag_ids: Optional[Iterable[int]] = None,
+        filter_tag_ids: Iterable[int] | None = None,
         without_labels: bool = False,
-    ) -> List[dict]:
+    ) -> list[dict]:
         ids = list(filter_tag_ids) if filter_tag_ids else []
 
         if without_labels:
@@ -106,11 +107,11 @@ class Repository:
             cur = self._conn.execute("SELECT * FROM notes ORDER BY updated_at DESC")
         return [dict(row) for row in cur.fetchall()]
 
-    def list_notes_for_embedding(self) -> List[dict]:
+    def list_notes_for_embedding(self) -> list[dict]:
         cur = self._conn.execute("SELECT id, title, content, is_markdown FROM notes")
         return [dict(row) for row in cur.fetchall()]
 
-    def list_notes_with_embeddings(self) -> List[dict]:
+    def list_notes_with_embeddings(self) -> list[dict]:
         cur = self._conn.execute(
             """
             SELECT n.id, n.title, n.content, n.is_markdown, ne.vector_json
@@ -122,7 +123,7 @@ class Repository:
 
     def search_notes_by_embedding(
         self, query_vector_json: str, top_k: int
-    ) -> List[dict]:
+    ) -> list[dict]:
         cur = self._conn.execute(
             """
             SELECT
@@ -140,11 +141,11 @@ class Repository:
         )
         return [dict(row) for row in cur.fetchall()]
 
-    def list_tags(self) -> List[dict]:
+    def list_tags(self) -> list[dict]:
         cur = self._conn.execute("SELECT * FROM tags ORDER BY name COLLATE NOCASE")
         return [dict(row) for row in cur.fetchall()]
 
-    def get_note_tags(self, note_id: int) -> List[dict]:
+    def get_note_tags(self, note_id: int) -> list[dict]:
         cur = self._conn.execute(
             """
             SELECT t.*

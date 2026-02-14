@@ -1,9 +1,8 @@
 """Shared prompt templates for RAG."""
 
-from typing import Dict, List, Tuple
 
 
-def build_prompt(contexts: str, question: str) -> Tuple[str, str]:
+def build_prompt(contexts: str, question: str) -> tuple[str, str]:
     """Build the system message and user prompt for the LLM.
 
     Args:
@@ -17,7 +16,8 @@ def build_prompt(contexts: str, question: str) -> Tuple[str, str]:
         "You are an assistant that answers questions based on provided notes. "
         "If the answer is not in the notes, say so clearly. "
         "Answer concisely in Polish.\n\n"
-        "IMPORTANT: Think step-by-step. First explain your reasoning, then provide the final answer. "
+        "IMPORTANT: Think step-by-step. First explain your reasoning, "
+        "then provide the final answer. "
         "Show your work and thought process."
     )
 
@@ -30,7 +30,7 @@ def build_prompt(contexts: str, question: str) -> Tuple[str, str]:
     return system, user
 
 
-def format_contexts(contexts: List[Dict]) -> str:
+def format_contexts(contexts: list[dict]) -> str:
     """Format retrieved note contexts into a string.
 
     Args:

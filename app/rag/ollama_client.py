@@ -4,7 +4,7 @@ import json
 import logging
 import urllib.error
 import urllib.request
-from typing import Generator, List
+from collections.abc import Generator
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ class OllamaClient:
         self._embed_model = embed_model
         self._llm_model = llm_model
 
-    def embed(self, text: str) -> List[float]:
+    def embed(self, text: str) -> list[float]:
         payload = {"model": self._embed_model, "prompt": text}
         data = self._post_json("/api/embeddings", payload)
         return data.get("embedding", [])

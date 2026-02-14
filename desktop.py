@@ -16,9 +16,12 @@ def _run() -> int:
         if exc.name == "gi":
             print("Brakuje modułu 'gi' (PyGObject).")
             print(
-                "Na Fedorze doinstaluj: sudo dnf install -y python3-gobject gtk4 libadwaita"
+                "Na Fedorze doinstaluj: sudo dnf install -y python3-gobject gtk4 "
+                "libadwaita"
             )
-            print("Następnie uruchom aplikację systemowym Pythonem: python3 desktop.py")
+            print(
+                "Następnie uruchom aplikację systemowym Pythonem: python3 desktop.py"
+            )
             return 1
         raise
 

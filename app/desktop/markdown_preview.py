@@ -86,7 +86,7 @@ class MarkdownPreview(Gtk.ScrolledWindow):
 
     # ── public API ──────────────────────────────────────────────
 
-    def render(self, markdown: str) -> None:
+    def render(self, markdown: str) -> None:  # noqa: C901
         self._clear()
         lines = markdown.split("\n")
         i = 0

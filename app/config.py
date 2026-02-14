@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
-
+from typing import Any
 
 _CONFIG_VERSION = 1
 
@@ -20,16 +19,16 @@ def _default_config_path() -> Path:
 class Config:
     """Application configuration with persistence."""
 
-    def __init__(self, config_path: Optional[Path] = None) -> None:
+    def __init__(self, config_path: Path | None = None) -> None:
         self._path = config_path or _default_config_path()
-        self._data: Dict[str, Any] = self._load()
+        self._data: dict[str, Any] = self._load()
 
-    def _load(self) -> Dict[str, Any]:
+    def _load(self) -> dict[str, Any]:
         """Load config from disk or return defaults."""
         if not self._path.exists():
             return self._defaults()
         try:
-            with open(self._path, "r", encoding="utf-8") as f:
+            with open(self._path, encoding="utf-8") as f:
                 data = json.load(f)
                 # Validate version
                 if data.get("version") != _CONFIG_VERSION:
@@ -38,7 +37,7 @@ class Config:
         except (OSError, json.JSONDecodeError):
             return self._defaults()
 
-    def _defaults(self) -> Dict[str, Any]:
+    def _defaults(self) -> dict[str, Any]:
         """Return default configuration."""
         return {
             "version": _CONFIG_VERSION,

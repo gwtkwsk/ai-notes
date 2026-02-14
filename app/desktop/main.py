@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import re
-from datetime import date, datetime, timedelta
 import os
-from pathlib import Path
+import re
 import threading
-from typing import Optional
+from collections.abc import Callable
+from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import gi
 
@@ -52,7 +52,7 @@ class NotesWindow(Adw.ApplicationWindow):
         app: Adw.Application,
         repo: Repository,
         config: Config,
-        rag_service: Optional[RagService] = None,
+        rag_service: RagService | None = None,
     ) -> None:
         super().__init__(application=app)
         self._repo = repo
@@ -60,8 +60,8 @@ class NotesWindow(Adw.ApplicationWindow):
         self._rag_service = rag_service
 
         # state
-        self._current_note_id: Optional[int] = None
-        self._selected_tag_id: Optional[int] = None
+        self._current_note_id: int | None = None
+        self._selected_tag_id: int | None = None
         self._without_labels_filter = False
         self._selected_filter_name = "All Notes"
         self._syncing_sidebar = False
@@ -419,7 +419,7 @@ class NotesWindow(Adw.ApplicationWindow):
         all_count = len(self._repo.list_notes())
         uncat_count = len(self._repo.list_notes(without_labels=True))
 
-        entries: list[tuple[str, str, Optional[int], int, Optional[str]]] = [
+        entries: list[tuple[str, str, int | None, int, str | None]] = [
             ("All Notes", "all", None, all_count, "view-grid-symbolic"),
             ("Unlabelled", "without", None, uncat_count, "folder-templates-symbolic"),
         ]
@@ -428,7 +428,7 @@ class NotesWindow(Adw.ApplicationWindow):
             cnt = len(self._repo.list_notes([tid]))
             entries.append((tag["name"], "tag", tid, cnt, None))
 
-        row_to_select: Optional[Gtk.ListBoxRow] = None
+        row_to_select: Gtk.ListBoxRow | None = None
         for label, ftype, tid, cnt, icon_name in entries:
             row = Gtk.ListBoxRow()
             row.filter_type = ftype  # type: ignore[attr-defined]
@@ -632,7 +632,7 @@ class NotesWindow(Adw.ApplicationWindow):
             self._toast(f"Error deleting tag: {exc}")
 
     def _on_label_selected(
-        self, _lb: Gtk.ListBox, row: Optional[Gtk.ListBoxRow]
+        self, _lb: Gtk.ListBox, row: Gtk.ListBoxRow | None
     ) -> None:
         if self._syncing_sidebar:
             return
@@ -661,7 +661,7 @@ class NotesWindow(Adw.ApplicationWindow):
 
     # -- Notes list --
 
-    def _reload_notes_list(self, select_note_id: Optional[int] = None) -> None:
+    def _reload_notes_list(self, select_note_id: int | None = None) -> None:
         self._clear_box(self._notes_sections_box)
 
         tag_ids = [self._selected_tag_id] if self._selected_tag_id else None
@@ -686,7 +686,7 @@ class NotesWindow(Adw.ApplicationWindow):
                 self._add_section(sec, grouped[sec], select_note_id)
 
     def _add_section(
-        self, title: str, notes: list[dict], select_note_id: Optional[int] = None
+        self, title: str, notes: list[dict], select_note_id: int | None = None
     ) -> None:
         lbl = Gtk.Label(label=title)
         lbl.set_xalign(0)
@@ -907,7 +907,7 @@ class NotesWindow(Adw.ApplicationWindow):
         linked.add_css_class("linked")
         bar.append(linked)
 
-        items: list[tuple[Optional[str], Optional[str], str, object]] = [
+        items: list[tuple[str | None, str | None, str, Callable[[], None]]] = [
             ("H", None, "Heading", self._fmt_heading),
             (None, "format-text-bold-symbolic", "Bold", self._fmt_bold),
             (None, "format-text-italic-symbolic", "Italic", self._fmt_italic),
@@ -927,7 +927,7 @@ class NotesWindow(Adw.ApplicationWindow):
             ("\u229e", None, "Table", self._fmt_table),
         ]
 
-        def _connect_callback(button, callback):
+        def _connect_callback(button: Gtk.Button, callback: Callable[[], None]) -> None:
             button.connect("clicked", lambda _: callback())
 
         for label, icon, tooltip, cb in items:
@@ -1014,7 +1014,7 @@ class NotesWindow(Adw.ApplicationWindow):
         self._toast_overlay.add_toast(Adw.Toast.new(message))
 
     @staticmethod
-    def _parse_row_date(raw: str) -> Optional[date]:
+    def _parse_row_date(raw: str) -> date | None:
         raw = raw.strip()
         if not raw:
             return None
@@ -1024,7 +1024,7 @@ class NotesWindow(Adw.ApplicationWindow):
             return None
 
     @staticmethod
-    def _section_for_date(d: Optional[date]) -> str:
+    def _section_for_date(d: date | None) -> str:
         if d is None:
             return "Older"
         today = date.today()
@@ -1055,9 +1055,8 @@ class NotesWindow(Adw.ApplicationWindow):
             self._rag_service = RagService(self._repo, self._config)
             GLib.idle_add(lambda: (self._toast("Preferences saved"), False))
         except Exception as exc:
-            GLib.idle_add(
-                lambda: (self._toast(f"Error reloading RAG service: {exc}"), False)
-            )
+            msg = f"Error reloading RAG service: {exc}"
+            GLib.idle_add(lambda msg: (self._toast(msg), False), msg)
 
     # -- RAG --
 
@@ -1100,7 +1099,7 @@ class AskDialog(Adw.Window):
     def __init__(
         self,
         parent: NotesWindow,
-        rag_service: Optional[RagService],
+        rag_service: RagService | None,
     ) -> None:
         super().__init__()
         self._parent = parent
@@ -1253,10 +1252,10 @@ class DesktopApplication(Adw.Application):
             application_id="org.disco.DiscoNotes",
             flags=Gio.ApplicationFlags.FLAGS_NONE,
         )
-        self._config: Optional[Config] = None
-        self._repo: Optional[Repository] = None
-        self._rag_service: Optional[RagService] = None
-        self._window: Optional[NotesWindow] = None
+        self._config: Config | None = None
+        self._repo: Repository | None = None
+        self._rag_service: RagService | None = None
+        self._window: NotesWindow | None = None
 
     def do_activate(self) -> None:
         if self._window is None:

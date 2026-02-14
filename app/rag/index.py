@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Dict, List
+from collections.abc import Callable
 
 from app.data.repository import Repository
 from app.rag.config import TOP_K
@@ -13,7 +13,10 @@ class RagIndex:
         self._repo = repo
         self._client = client
 
-    def build_index(self, progress_cb=None) -> int:
+    def build_index(
+        self,
+        progress_cb: Callable[[int, int, dict], None] | None = None,
+    ) -> int:
         notes = self._repo.list_notes_for_embedding()
         total = len(notes)
         self._repo.clear_embeddings()
@@ -25,7 +28,12 @@ class RagIndex:
                 progress_cb(idx, total, note)
         return total
 
-    def query(self, question: str, top_k: int = TOP_K, status_cb=None) -> List[Dict]:
+    def query(
+        self,
+        question: str,
+        top_k: int = TOP_K,
+        status_cb: Callable[[str], None] | None = None,
+    ) -> list[dict]:
         if status_cb is not None:
             status_cb("Embedding the question")
         q_vec = self._client.embed(question)
@@ -35,7 +43,7 @@ class RagIndex:
             status_cb("Searching notes")
         return self._repo.search_notes_by_embedding(json.dumps(q_vec), top_k)
 
-    def _note_text(self, note: Dict) -> str:
+    def _note_text(self, note: dict) -> str:
         title = note.get("title", "")
         content = note.get("content", "")
         return f"{title}\n\n{content}".strip()
