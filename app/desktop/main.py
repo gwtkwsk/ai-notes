@@ -930,6 +930,9 @@ class NotesWindow(Adw.ApplicationWindow):
             ("\u229e", None, "Table", self._fmt_table),
         ]
 
+        def _connect_callback(button, callback):
+            button.connect("clicked", lambda _: callback())
+
         for label, icon, tooltip, cb in items:
             btn = (
                 Gtk.Button(icon_name=icon)
@@ -937,7 +940,7 @@ class NotesWindow(Adw.ApplicationWindow):
                 else Gtk.Button(label=label)
             )
             btn.set_tooltip_text(tooltip)
-            btn.connect("clicked", lambda _b, fn=cb: fn())
+            _connect_callback(btn, cb)
             linked.append(btn)
 
         return bar

@@ -17,7 +17,7 @@ class FakeOllama(OllamaClient):
             return [0.0, 1.0, 0.0]
         return [0.0, 0.0, 1.0]
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, system: str | None = None) -> str:
         return "ok"
 
 

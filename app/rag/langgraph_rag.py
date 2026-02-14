@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List, TypedDict
+from typing import Dict, List, NotRequired, TypedDict
 
 from langgraph.graph import END, StateGraph
 
@@ -11,8 +11,8 @@ from app.rag.prompts import build_prompt, format_contexts
 
 class RagState(TypedDict):
     question: str
-    contexts: List[Dict]
-    answer: str
+    contexts: NotRequired[List[Dict]]
+    answer: NotRequired[str]
 
 
 def build_graph(index: RagIndex, client: OllamaClient):

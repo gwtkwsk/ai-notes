@@ -48,6 +48,7 @@ class Repository:
             (title, content, 1),
         )
         self._conn.commit()
+        assert cur.lastrowid is not None
         return int(cur.lastrowid)
 
     def update_note(self, note_id: int, title: str, content: str) -> None:
@@ -158,6 +159,7 @@ class Repository:
             return int(row["id"])
         cur = self._conn.execute("INSERT INTO tags(name) VALUES (?)", (name,))
         self._conn.commit()
+        assert cur.lastrowid is not None
         return int(cur.lastrowid)
 
     def set_note_tags(self, note_id: int, tag_names: Iterable[str]) -> None:

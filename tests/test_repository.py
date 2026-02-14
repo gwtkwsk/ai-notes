@@ -8,10 +8,12 @@ def test_create_update_and_tags(tmp_path):
 
     note_id = repo.create_note("Title", "Body")
     note = repo.get_note(note_id)
+    assert note is not None
     assert note["title"] == "Title"
 
     repo.update_note(note_id, "New", "Text")
     note = repo.get_note(note_id)
+    assert note is not None
     assert note["title"] == "New"
 
     repo.set_note_tags(note_id, ["python", "sqlite"])

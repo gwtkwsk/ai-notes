@@ -20,7 +20,7 @@ class OllamaClient:
         data = self._post_json("/api/embeddings", payload)
         return data.get("embedding", [])
 
-    def generate(self, prompt: str, system: str = None) -> str:
+    def generate(self, prompt: str, system: str | None = None) -> str:
         payload = {
             "model": self._llm_model,
             "prompt": prompt,
@@ -35,7 +35,7 @@ class OllamaClient:
         data = self._post_json("/api/generate", payload)
         return data.get("response", "")
 
-    def generate_stream(self, prompt: str, system: str = None) -> Generator[str, None, None]:
+    def generate_stream(self, prompt: str, system: str | None = None) -> Generator[str, None, None]:
         payload = {
             "model": self._llm_model,
             "prompt": prompt,
