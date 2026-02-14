@@ -52,8 +52,8 @@ Run Ollama and pull models used by the app:
 
 ```bash
 ollama serve
-ollama pull nomic-embed-text
-ollama pull qwen2.5:7b
+ollama pull qwen3-embedding:8b
+ollama pull qwen3:8b
 ```
 
 Model and endpoint settings are in:
