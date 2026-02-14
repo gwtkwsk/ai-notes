@@ -1,10 +1,12 @@
-import json
+import logging
 import sqlite3
 from collections.abc import Iterable
 
 import sqlite_vec
 
 from app.data.schema import SCHEMA_SQL
+
+logger = logging.getLogger(__name__)
 
 
 class Repository:
@@ -23,6 +25,7 @@ class Repository:
         self._conn.close()
 
     def _init_schema(self) -> None:
+        self._migrate_embeddings_to_blob()
         self._conn.executescript(SCHEMA_SQL)
         self._conn.commit()
         # Migration: add is_favourite column for databases created before it existed.
@@ -34,12 +37,26 @@ class Repository:
         except Exception:
             pass  # column already exists
 
+    def _migrate_embeddings_to_blob(self) -> None:
+        """Drop old TEXT-based note_embeddings table so new BLOB schema is created."""
+        try:
+            self._conn.execute("SELECT vector_json FROM note_embeddings LIMIT 0")
+            # Old schema detected — drop it; embeddings will be regenerated.
+            logger.info(
+                "Migrating embeddings from TEXT to BLOB format (re-index required)"
+            )
+            self._conn.execute("DROP TABLE note_embeddings")
+            self._conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Table doesn't exist yet or already has new schema
+
     def _load_sqlite_vec(self) -> None:
         try:
             self._conn.enable_load_extension(True)
             sqlite_vec.load(self._conn)
             self._conn.enable_load_extension(False)
             self._conn.execute("SELECT vec_version()")
+            logger.info("sqlite-vec loaded successfully")
         except Exception as exc:
             raise RuntimeError(
                 "sqlite-vec is required for RAG vector search, but could not "
@@ -115,39 +132,49 @@ class Repository:
     def list_notes_with_embeddings(self) -> list[dict]:
         cur = self._conn.execute(
             """
-            SELECT n.id, n.title, n.content, n.is_markdown, ne.vector_json
+            SELECT n.id, n.title, n.content, n.is_markdown,
+                   COUNT(ne.id) AS embedding_count
             FROM notes n
             LEFT JOIN note_embeddings ne ON ne.note_id = n.id
+            GROUP BY n.id
             """
         )
         return [dict(row) for row in cur.fetchall()]
 
-    def search_notes_by_embedding(
-        self, query_vector_json: str, top_k: int
-    ) -> list[dict]:
-        try:
-            cur = self._conn.execute(
-                """
-                SELECT
-                    n.id,
-                    n.title,
-                    n.content,
-                    n.is_markdown,
-                    vec_distance_cosine(ne.vector_json, ?) AS cosine_distance
-                FROM notes n
-                JOIN note_embeddings ne ON ne.note_id = n.id
-                ORDER BY cosine_distance ASC
-                LIMIT ?
-                """,
-                (query_vector_json, top_k),
+    def search_notes_by_embedding(self, query_vector: bytes, top_k: int) -> list[dict]:
+        count_cur = self._conn.execute("SELECT COUNT(*) as cnt FROM note_embeddings")
+        count_row = count_cur.fetchone()
+        embedding_count = count_row["cnt"] if count_row else 0
+        logger.info(
+            f"Searching against {embedding_count} stored embedding chunks "
+            f"(top_k={top_k})"
+        )
+
+        if embedding_count == 0:
+            logger.warning(
+                "No embeddings found in database. Run 'Re-index Notes' first."
             )
-            return [dict(row) for row in cur.fetchall()]
-        except sqlite3.OperationalError as e:
-            if "JSON parsing error" in str(e):
-                # Clear corrupted embeddings
-                self.clear_embeddings()
-                return []
-            raise
+            return []
+
+        cur = self._conn.execute(
+            """
+            SELECT
+                n.id,
+                n.title,
+                n.content,
+                n.is_markdown,
+                MIN(vec_distance_cosine(ne.vector, ?)) AS cosine_distance
+            FROM notes n
+            JOIN note_embeddings ne ON ne.note_id = n.id
+            GROUP BY n.id
+            ORDER BY cosine_distance ASC
+            LIMIT ?
+            """,
+            (query_vector, top_k),
+        )
+        results = [dict(row) for row in cur.fetchall()]
+        logger.info(f"Database returned {len(results)} results")
+        return results
 
     def list_tags(self) -> list[dict]:
         cur = self._conn.execute("SELECT * FROM tags ORDER BY name COLLATE NOCASE")
@@ -237,26 +264,31 @@ class Repository:
         row = cur.fetchone()
         return int(row["cnt"]) if row else 0
 
-    def upsert_note_embedding(self, note_id: int, vector_json: str) -> None:
-        # Validate that vector_json is a JSON array
-        try:
-            parsed = json.loads(vector_json)
-            if not isinstance(parsed, list) or not parsed:
-                raise ValueError("Vector must be a non-empty JSON array")
-        except (json.JSONDecodeError, ValueError) as e:
-            raise ValueError(f"Invalid vector_json: {vector_json}") from e
-        self._conn.execute(
-            """
-            INSERT INTO note_embeddings(note_id, vector_json, updated_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(note_id) DO UPDATE SET
-                vector_json = excluded.vector_json,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (note_id, vector_json),
-        )
+    def replace_note_embeddings(
+        self, note_id: int, chunks: list[tuple[str, bytes]]
+    ) -> None:
+        """Replace all embedding chunks for a note.
+
+        Args:
+            note_id: The note ID.
+            chunks: List of ``(chunk_text, vector_blob)`` tuples where
+                    *vector_blob* is a little-endian float32 binary vector.
+        """
+        self._conn.execute("DELETE FROM note_embeddings WHERE note_id = ?", (note_id,))
+        for idx, (chunk_text, vector_blob) in enumerate(chunks):
+            self._conn.execute(
+                """
+                INSERT INTO note_embeddings(
+                    note_id, chunk_index, chunk_text,
+                    vector, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (note_id, idx, chunk_text, vector_blob),
+            )
         self._conn.commit()
+        logger.debug(f"Stored {len(chunks)} embedding chunk(s) for note {note_id}")
 
     def clear_embeddings(self) -> None:
+        logger.info("Clearing all embeddings from database")
         self._conn.execute("DELETE FROM note_embeddings")
         self._conn.commit()

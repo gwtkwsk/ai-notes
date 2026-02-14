@@ -16,15 +16,40 @@ class OllamaClient:
         self._llm_model = llm_model
 
     def embed(self, text: str) -> list[float]:
+        import math
+
+        logger.debug(
+            f"Embedding text (length={len(text)} chars, first 50: '{text[:50]}...')"
+        )
         payload = {"model": self._embed_model, "prompt": text}
-        data = self._post_json("/api/embeddings", payload)
-        embedding = data.get("embedding")
-        if not isinstance(embedding, list) or not embedding:
-            logger.warning(
-                f"Invalid embedding for text: {text[:50]}..., got: {embedding}"
+        try:
+            data = self._post_json("/api/embeddings", payload)
+            embedding = data.get("embedding")
+            if not isinstance(embedding, list) or not embedding:
+                logger.warning(
+                    f"Invalid embedding response for text: {text[:50]}..., "
+                    f"got: {type(embedding)}"
+                )
+                return []
+
+            # Validate all values are finite floats
+            for i, val in enumerate(embedding):
+                if not isinstance(val, (int, float)):
+                    logger.error(
+                        f"Invalid value type at index {i}: {type(val)} = {val}"
+                    )
+                    return []
+                if math.isnan(val) or math.isinf(val):
+                    logger.error(f"Invalid value at index {i}: {val} (NaN or Inf)")
+                    return []
+
+            logger.debug(
+                f"Successfully generated embedding (dimension={len(embedding)})"
             )
+            return embedding
+        except Exception as e:
+            logger.error(f"Failed to generate embedding: {e}")
             return []
-        return embedding
 
     def generate(self, prompt: str, system: str | None = None) -> str:
         payload = {

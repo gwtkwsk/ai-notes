@@ -62,7 +62,7 @@ class RagService:
         cancel_cb: Callable[[], bool] | None = None,
         status_cb: Callable[[str], None] | None = None,
     ) -> Iterator[dict]:
-        logger.info(f"RAG query started: {question}")
+        logger.info(f"RAG query started: '{question}'")
         contexts = self._index.query(question, status_cb=status_cb)
         logger.info(f"Retrieved {len(contexts)} context documents")
         system, user_prompt = build_prompt(format_contexts(contexts), question)

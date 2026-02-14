@@ -25,9 +25,13 @@ CREATE TABLE IF NOT EXISTS note_tags (
 );
 
 CREATE TABLE IF NOT EXISTS note_embeddings (
-    note_id INTEGER PRIMARY KEY,
-    vector_json TEXT NOT NULL,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id INTEGER NOT NULL,
+    chunk_index INTEGER NOT NULL DEFAULT 0,
+    chunk_text TEXT NOT NULL DEFAULT '',
+    vector BLOB NOT NULL,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(note_id, chunk_index),
     FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE
 );
 """
