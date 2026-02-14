@@ -23,6 +23,8 @@ class RagIndex:
         for idx, note in enumerate(notes, start=1):
             text = self._note_text(note)
             vector = self._client.embed(text)
+            if not vector:
+                continue
             self._repo.upsert_note_embedding(note["id"], json.dumps(vector))
             if progress_cb is not None:
                 progress_cb(idx, total, note)

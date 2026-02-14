@@ -1,7 +1,6 @@
 """Shared prompt templates for RAG."""
 
 
-
 def build_prompt(contexts: str, question: str) -> tuple[str, str]:
     """Build the system message and user prompt for the LLM.
 

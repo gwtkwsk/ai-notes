@@ -19,9 +19,7 @@ def _run() -> int:
                 "Na Fedorze doinstaluj: sudo dnf install -y python3-gobject gtk4 "
                 "libadwaita"
             )
-            print(
-                "Następnie uruchom aplikację systemowym Pythonem: python3 desktop.py"
-            )
+            print("Następnie uruchom aplikację systemowym Pythonem: python3 desktop.py")
             return 1
         raise
 

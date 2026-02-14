@@ -18,7 +18,13 @@ class OllamaClient:
     def embed(self, text: str) -> list[float]:
         payload = {"model": self._embed_model, "prompt": text}
         data = self._post_json("/api/embeddings", payload)
-        return data.get("embedding", [])
+        embedding = data.get("embedding")
+        if not isinstance(embedding, list) or not embedding:
+            logger.warning(
+                f"Invalid embedding for text: {text[:50]}..., got: {embedding}"
+            )
+            return []
+        return embedding
 
     def generate(self, prompt: str, system: str | None = None) -> str:
         payload = {

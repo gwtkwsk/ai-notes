@@ -631,9 +631,7 @@ class NotesWindow(Adw.ApplicationWindow):
         except Exception as exc:
             self._toast(f"Error deleting tag: {exc}")
 
-    def _on_label_selected(
-        self, _lb: Gtk.ListBox, row: Gtk.ListBoxRow | None
-    ) -> None:
+    def _on_label_selected(self, _lb: Gtk.ListBox, row: Gtk.ListBoxRow | None) -> None:
         if self._syncing_sidebar:
             return
 

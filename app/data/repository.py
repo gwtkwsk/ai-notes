@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from collections.abc import Iterable
 
@@ -124,22 +125,29 @@ class Repository:
     def search_notes_by_embedding(
         self, query_vector_json: str, top_k: int
     ) -> list[dict]:
-        cur = self._conn.execute(
-            """
-            SELECT
-                n.id,
-                n.title,
-                n.content,
-                n.is_markdown,
-                vec_distance_cosine(ne.vector_json, ?) AS cosine_distance
-            FROM notes n
-            JOIN note_embeddings ne ON ne.note_id = n.id
-            ORDER BY cosine_distance ASC
-            LIMIT ?
-            """,
-            (query_vector_json, top_k),
-        )
-        return [dict(row) for row in cur.fetchall()]
+        try:
+            cur = self._conn.execute(
+                """
+                SELECT
+                    n.id,
+                    n.title,
+                    n.content,
+                    n.is_markdown,
+                    vec_distance_cosine(ne.vector_json, ?) AS cosine_distance
+                FROM notes n
+                JOIN note_embeddings ne ON ne.note_id = n.id
+                ORDER BY cosine_distance ASC
+                LIMIT ?
+                """,
+                (query_vector_json, top_k),
+            )
+            return [dict(row) for row in cur.fetchall()]
+        except sqlite3.OperationalError as e:
+            if "JSON parsing error" in str(e):
+                # Clear corrupted embeddings
+                self.clear_embeddings()
+                return []
+            raise
 
     def list_tags(self) -> list[dict]:
         cur = self._conn.execute("SELECT * FROM tags ORDER BY name COLLATE NOCASE")
@@ -230,6 +238,13 @@ class Repository:
         return int(row["cnt"]) if row else 0
 
     def upsert_note_embedding(self, note_id: int, vector_json: str) -> None:
+        # Validate that vector_json is a JSON array
+        try:
+            parsed = json.loads(vector_json)
+            if not isinstance(parsed, list) or not parsed:
+                raise ValueError("Vector must be a non-empty JSON array")
+        except (json.JSONDecodeError, ValueError) as e:
+            raise ValueError(f"Invalid vector_json: {vector_json}") from e
         self._conn.execute(
             """
             INSERT INTO note_embeddings(note_id, vector_json, updated_at)
