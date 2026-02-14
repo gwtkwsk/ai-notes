@@ -18,6 +18,7 @@ uv run --group dev python -m pytest tests/
 
 uv run --group dev ruff check
 uv run --group dev ruff format
+uv run --group dev pyright
 
 # Running the application
 
