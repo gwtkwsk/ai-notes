@@ -26,11 +26,17 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
-exclude = ["tests*"]
+exclude = [
+    "tests*",
+    "build*",
+]
 
 [tool.ruff]
 line-length = 88
 target-version = "py312"
+exclude = [
+    "build",
+]
 
 [tool.ruff.lint]
 select = [
@@ -47,7 +53,9 @@ ignore = ["E203"]
 
 [tool.pyright]
 include = ["app", "tests"]
-exclude = ["**/node_modules", "**/__pycache__", "build"]
+exclude = [
+    "build",
+]
 
 pythonVersion = "3.12"
 pythonPlatform = "Linux"
