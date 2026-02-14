@@ -12,7 +12,7 @@
 
 # Running tests
 
-uv run --extra dev python -m pytest tests/
+uv run --group dev python -m pytest tests/
 
 # Running the application
 

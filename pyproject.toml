@@ -9,13 +9,6 @@ dependencies = [
   "sqlite-vec>=0.1.6",
 ]
 
-[project.optional-dependencies]
-dev = [
-  "pytest>=7.4",
-  "ruff",
-  "pyright",
-]
-
 [project.scripts]
 disco-notes-desktop = "app.desktop.main:main"
 
@@ -59,3 +52,11 @@ typeCheckingMode = "standard"
 
 reportMissingImports = true
 reportMissingTypeStubs = false
+
+[dependency-groups]
+dev = [
+  "pytest>=7.4",
+  "ruff",
+  "pyright",
+  "pip>=26.0.1",
+]

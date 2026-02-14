@@ -23,7 +23,7 @@ sudo dnf install -y python3-gobject gtk4 libadwaita
 Install Python dependencies (one-time):
 
 ```bash
-uv sync --extra dev
+uv sync --group dev
 ```
 
 Run the app:
@@ -97,7 +97,5 @@ flatpak uninstall org.disco.DiscoNotes
 ## Tests
 
 ```bash
-uv lock
-uv sync --extra dev
-uv run python -m pytest
+uv run --group dev python -m pytest tests/
 ```
