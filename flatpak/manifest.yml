@@ -16,7 +16,7 @@ modules:
     buildsystem: simple
     sources:
       - type: dir
-        path: deps
+        path: ../build/deps
     build-commands:
           - pip3 install --no-index --find-links=. --prefix=/app --no-build-isolation --ignore-installed *.whl
   - name: disco-notes
@@ -25,11 +25,7 @@ modules:
       - type: dir
         path: ..
         skip:
-          - .flatpak-builder
-          - flatpak-build
-          - flatpak-repo
-          - flatpak/deps
-          - build-dir
+          - build
           - .git
           - __pycache__
           - "*.egg-info"

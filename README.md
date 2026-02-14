@@ -73,7 +73,7 @@ Build and install as a Flatpak:
 This will:
 - Download all Python dependencies as pre-built wheels
 - Build the app with the GNOME SDK 48 (Python 3.12)
-- Create `disco-notes.flatpak` bundle for distribution
+- Create `build/disco-notes.flatpak` bundle for distribution
 - Install it locally for testing
 
 Run the Flatpak:
