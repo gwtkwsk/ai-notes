@@ -29,7 +29,7 @@ uv sync --group dev
 Run the app:
 
 ```bash
-python3 desktop.py
+python desktop.py
 ```
 
 The app stores data in:
@@ -41,10 +41,10 @@ The app stores data in:
 You can override the database location:
 
 ```bash
-DISCO_NOTES_DB=/path/to/notes.db python3 desktop.py
+DISCO_NOTES_DB=/path/to/notes.db python desktop.py
 ```
 
-**Note:** If you run `python3 desktop.py` outside the `uv` environment, ensure that interpreter also has `sqlite-vec` available (required for RAG search)
+**Note:** If you run `python desktop.py` outside the `uv` environment, ensure that interpreter also has `sqlite-vec` available (required for RAG search)
 
 ## Ollama (required for Q&A)
 
