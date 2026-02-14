@@ -12,6 +12,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=7.4",
+  "ruff",
+  "pyright",
 ]
 
 [project.scripts]
@@ -29,3 +31,31 @@ exclude = [
   "flatpak-build*",
   ".*",
 ]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",    # Pycodestyle Error
+    "F",    # Pyflakes
+    "W",    # Pycodestyle Warning
+    "C90",  # Złożoność kodu
+    "ANN",  # Wymuszanie typów
+    "UP",   # Pyupgrade
+    "I",    # Isort (sortowanie importów)
+    "B",    # Bugbear
+]
+ignore = ["E203"]
+
+[tool.pyright]
+include = ["app", "tests"]
+exclude = ["**/node_modules", "**/__pycache__", "build", "dist"]
+
+pythonVersion = "3.12"
+pythonPlatform = "Linux"
+typeCheckingMode = "standard" 
+
+reportMissingImports = true
+reportMissingTypeStubs = false
