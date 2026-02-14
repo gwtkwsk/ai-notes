@@ -7,3 +7,19 @@ target/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# Editor and OS files
+.DS_Store
+.vscode/
+.idea/
+
+# Environment files
+.env
+
+# Build/dist
+dist/
+build/
+*.egg-info/
+
+# Python tooling caches
+.mypy_cache/
