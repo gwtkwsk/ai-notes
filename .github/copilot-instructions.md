@@ -4,6 +4,7 @@
 - Python
 - LangGraph
 - Gnome SDK
+- sqlite3 with sqlite-vec extension for vector search
 
 # General rules
 
@@ -11,6 +12,7 @@
 - Manage Python dependencies using uv, without pip.
 - After introducing code changes always run tests and linters.
 - Use type hints in Python code everywhere.
+- While debugging application issues always prefer writing tests instead of running the application.
 
 # Running tests
 
