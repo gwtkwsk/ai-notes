@@ -99,3 +99,10 @@ flatpak uninstall org.disco.DiscoNotes
 ```bash
 uv run --group dev python -m pytest tests/
 ```
+
+## Linting
+
+```bash
+uv run --group dev ruff check
+uv run --group dev ruff format
+```

@@ -14,6 +14,11 @@
 
 uv run --group dev python -m pytest tests/
 
+# Running linting
+
+uv run --group dev ruff check
+uv run --group dev ruff format
+
 # Running the application
 
 python desktop.py # always run outside of uv
