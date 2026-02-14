@@ -58,6 +58,38 @@ Model and endpoint settings are in:
 
 - `app/rag/config.py`
 
+## Build Flatpak
+
+Build and install as a Flatpak (recommended for distribution):
+
+```bash
+./scripts/build-flatpak.sh
+```
+
+This will:
+- Download all Python dependencies as pre-built wheels
+- Build the app with the GNOME SDK 48 (Python 3.12)
+- Create `disco-notes.flatpak` bundle for distribution
+- Install it locally for testing
+
+Run the Flatpak:
+
+```bash
+flatpak run org.disco.DiscoNotes
+```
+
+The Flatpak stores data in:
+
+```text
+~/.var/app/org.disco.DiscoNotes/data/disco-notes/notes.db
+```
+
+To uninstall:
+
+```bash
+flatpak uninstall org.disco.DiscoNotes
+```
+
 ## Tests
 
 ```bash
