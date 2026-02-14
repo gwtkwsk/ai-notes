@@ -10,27 +10,27 @@ Native GNOME notes app (GTK4/Libadwaita) with local SQLite, Markdown notes, tags
 - Ask questions about your notes (RAG + Ollama)
 - Local SQLite storage
 
-## Run desktop (Fedora GNOME)
+## Local Development (Fedora GNOME)
 
-Install system dependencies:
+**For day-to-day development, run the app directly without building a Flatpak.** Changes take effect immediately on restart.
+
+Install system dependencies (one-time):
 
 ```bash
 sudo dnf install -y python3-gobject gtk4 libadwaita
 ```
 
-Run desktop app:
-
-```bash
-python3 desktop.py
-```
-
-Install Python dependencies for the interpreter used to run the app (includes `sqlite-vec` required by RAG search):
+Install Python dependencies (one-time):
 
 ```bash
 uv sync --extra dev
 ```
 
-If you run `python3 desktop.py` outside the `uv` environment, ensure that interpreter also has `sqlite-vec` available.
+Run the app:
+
+```bash
+python3 desktop.py
+```
 
 The app stores data in:
 
@@ -38,11 +38,13 @@ The app stores data in:
 ~/.local/share/disco-notes/notes.db
 ```
 
-You can override it with:
+You can override the database location:
 
 ```bash
 DISCO_NOTES_DB=/path/to/notes.db python3 desktop.py
 ```
+
+**Note:** If you run `python3 desktop.py` outside the `uv` environment, ensure that interpreter also has `sqlite-vec` available (required for RAG search)
 
 ## Ollama (required for Q&A)
 
@@ -58,9 +60,11 @@ Model and endpoint settings are in:
 
 - `app/rag/config.py`
 
-## Build Flatpak
+## Build Flatpak (Distribution)
 
-Build and install as a Flatpak (recommended for distribution):
+**Only needed for creating distributable packages or testing the sandboxed version.** Not required for local development.
+
+Build and install as a Flatpak:
 
 ```bash
 ./scripts/build-flatpak.sh
