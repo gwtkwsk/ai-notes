@@ -69,6 +69,7 @@ class NotesWindow(Adw.ApplicationWindow):
         self._selected_filter_name = "All Notes"
         self._syncing_sidebar = False
         self._reindex_running = False
+        self._reindex_pulse_id: int | None = None
         self._header_packed: list[Gtk.Widget] = []
 
         self.set_title("Disco Notes")
@@ -136,6 +137,12 @@ class NotesWindow(Adw.ApplicationWindow):
         self._window_title = Adw.WindowTitle(title="All Notes", subtitle="")
         self._content_header.set_title_widget(self._window_title)
         content_tv.add_top_bar(self._content_header)
+
+        # Progress bar for reindexing with OSD style
+        self._reindex_progress = Gtk.ProgressBar()
+        self._reindex_progress.add_css_class("osd")
+        self._reindex_progress.set_visible(False)
+        content_tv.add_top_bar(self._reindex_progress)
 
         # Reusable buttons (shown/hidden per mode)
         self._new_button = Gtk.Button(icon_name="list-add-symbolic")
@@ -1085,7 +1092,16 @@ class NotesWindow(Adw.ApplicationWindow):
         if self._rag_service is None or self._reindex_running:
             return
         self._reindex_running = True
+        self._reindex_progress.set_visible(True)
+        self._reindex_progress.pulse()
+        self._reindex_pulse_id = GLib.timeout_add(100, self._pulse_reindex_progress)
         threading.Thread(target=self._reindex_worker, daemon=True).start()
+
+    def _pulse_reindex_progress(self) -> bool:
+        if self._reindex_running:
+            self._reindex_progress.pulse()
+            return True
+        return False
 
     def _reindex_worker(self) -> None:
         if self._rag_service is None:
@@ -1102,8 +1118,14 @@ class NotesWindow(Adw.ApplicationWindow):
 
     def _on_reindex_done(self, error: str) -> bool:
         self._reindex_running = False
+        self._reindex_progress.set_visible(False)
+        if self._reindex_pulse_id is not None:
+            GLib.source_remove(self._reindex_pulse_id)
+            self._reindex_pulse_id = None
         if error:
             self._toast(f"Re-index error: {error}")
+        else:
+            self._toast("Re-index complete")
         return False
 
 
