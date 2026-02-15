@@ -35,6 +35,17 @@ class RagService:
     ) -> int:
         return self._index.build_index(progress_cb)
 
+    def index_note(self, note_id: int) -> bool:
+        """Index or re-index a single note.
+
+        Args:
+            note_id: The ID of the note to index.
+
+        Returns:
+            True if indexing succeeded, False otherwise.
+        """
+        return self._index.index_note(note_id)
+
     def ask(self, question: str) -> dict[str, list[str] | str]:
         if self._graph is None:
             try:

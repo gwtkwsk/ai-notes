@@ -74,6 +74,47 @@ class RagIndex:
 
     # -- index building ------------------------------------------------------
 
+    def index_note(self, note_id: int) -> bool:
+        """Index or re-index a single note.
+
+        Args:
+            note_id: The ID of the note to index.
+
+        Returns:
+            True if indexing succeeded, False otherwise.
+        """
+        note = self._repo.get_note(note_id)
+        if note is None:
+            logger.warning(f"Note {note_id} not found, skipping indexing")
+            return False
+
+        text = self._note_text(note)
+        note_title = note.get("title", "")[:50]
+        chunks = self._chunk_text(text)
+        logger.debug(
+            f"Indexing note id={note_id}, title='{note_title}', chunks={len(chunks)}"
+        )
+
+        chunk_embeddings: list[tuple[str, bytes]] = []
+        for chunk in chunks:
+            vector = self._client.embed(chunk)
+            if not vector:
+                logger.warning(f"Failed to embed chunk of note {note_id}, skipping")
+                continue
+            blob = self._serialize_vector(vector)
+            chunk_embeddings.append((chunk, blob))
+
+        if chunk_embeddings:
+            self._repo.replace_note_embeddings(note_id, chunk_embeddings)
+            logger.info(
+                f"Successfully indexed note {note_id} with "
+                f"{len(chunk_embeddings)} chunks"
+            )
+            return True
+        else:
+            logger.warning(f"No embeddings generated for note {note_id}")
+            return False
+
     def build_index(
         self,
         progress_cb: Callable[[int, int, dict], None] | None = None,

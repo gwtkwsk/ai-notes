@@ -13,6 +13,7 @@
 - After introducing code changes always run tests and linters.
 - Use type hints in Python code everywhere.
 - While debugging application issues always prefer writing tests instead of running the application.
+- Use subagents with a minimal context while running linters and tests after making code changes to preserve the main context.
 
 # Running tests
 

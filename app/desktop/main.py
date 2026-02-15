@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 import threading
@@ -20,6 +21,8 @@ gi.require_version("Adw", "1")
 gi.require_version("Gdk", "4.0")
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 _CSS = """\
 .pill {
@@ -809,7 +812,7 @@ class NotesWindow(Adw.ApplicationWindow):
             self._repo.set_note_tags(self._current_note_id, tag_names)
             self._toast("Saved")
 
-        self._start_reindex()
+        self._index_single_note(self._current_note_id)
 
     # -- Tag chips management --
 
@@ -889,7 +892,7 @@ class NotesWindow(Adw.ApplicationWindow):
         self._reload_sidebar()
         self._reload_notes_list()
         self._set_mode("list")
-        self._start_reindex()
+        # Note: embeddings are automatically deleted via CASCADE
 
     # -- Formatting toolbar --
 
@@ -1061,6 +1064,22 @@ class NotesWindow(Adw.ApplicationWindow):
     def _on_open_ask_clicked(self, _btn: Gtk.Button) -> None:
         dlg = AskDialog(self, self._rag_service)
         dlg.present()
+
+    def _index_single_note(self, note_id: int) -> None:
+        """Index a single note in a background thread."""
+        if self._rag_service is None:
+            return
+
+        def worker(rag_service: RagService) -> None:
+            rag = rag_service.clone_for_thread()
+            try:
+                rag.index_note(note_id)
+            except Exception as exc:
+                logger.error(f"Error indexing note {note_id}: {exc}")
+            finally:
+                rag.close()
+
+        threading.Thread(target=worker, args=(self._rag_service,), daemon=True).start()
 
     def _start_reindex(self) -> None:
         if self._rag_service is None or self._reindex_running:
