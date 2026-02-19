@@ -5,7 +5,9 @@ from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
 
 from app.data.repository import Repository
+from app.rag.chunk_selector import ChunkSelector
 from app.rag.client_factory import create_llm_client
+from app.rag.config import CHUNK_SELECTION_ENABLED
 from app.rag.index import RagIndex
 from app.rag.llm_client import LLMClient
 from app.rag.prompts import build_prompt, format_contexts
@@ -23,6 +25,9 @@ class RagService:
         self._config = config
         self._client: LLMClient = create_llm_client(config)
         self._index = RagIndex(repo, self._client)
+        self._chunk_selector: ChunkSelector | None = (
+            ChunkSelector(self._client) if CHUNK_SELECTION_ENABLED else None
+        )
 
         self._graph: Any | None = None
 
@@ -52,11 +57,16 @@ class RagService:
                     "Brakuje zależności 'langgraph' wymaganej dla trybu ask(). "
                     "Użyj streamingu albo doinstaluj zależności projektu."
                 ) from exc
-            self._graph = build_graph(self._index, self._client)
+            self._graph = build_graph(
+                self._index, self._client, chunk_selector=self._chunk_selector
+            )
 
         assert self._graph is not None
         state = self._graph.invoke({"question": question})
-        sources = [note.get("title", "Untitled") for note in state.get("contexts", [])]
+        sources = [
+            note.get("title", "Untitled")
+            for note in (state.get("selected_contexts") or state.get("contexts", []))
+        ]
         answer = state.get("answer", "")
         return {
             "answer": answer,
@@ -73,6 +83,13 @@ class RagService:
         logger.info(f"RAG query started: '{question}'")
         contexts = self._index.query(question, status_cb=status_cb)
         logger.info(f"Retrieved {len(contexts)} context documents")
+
+        if self._chunk_selector is not None:
+            if status_cb is not None:
+                status_cb("Evaluating chunk relevance…")
+            contexts = self._chunk_selector.select(contexts, question)
+            logger.info(f"After chunk selection: {len(contexts)} relevant chunks")
+
         system, user_prompt = build_prompt(format_contexts(contexts), question)
         logger.debug(f"System message: {system}")
         logger.debug(f"User prompt (first 300 chars): {user_prompt[:300]}...")

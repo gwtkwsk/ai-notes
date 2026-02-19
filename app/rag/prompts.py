@@ -41,3 +41,26 @@ def format_contexts(contexts: list[dict]) -> str:
         content = content[:2000]  # Limit context length
         parts.append(f"--- {title} ---\n{content}")
     return "\n\n".join(parts)
+
+
+def build_chunk_relevance_prompt(chunk_content: str, question: str) -> tuple[str, str]:
+    """Build the system and user prompt for chunk relevance evaluation.
+
+    Args:
+        chunk_content: The text content of the chunk to evaluate.
+            Will be truncated by the caller to avoid token overruns.
+        question: The user's question.
+
+    Returns:
+        Tuple of (system_message, user_prompt).
+    """
+    system = (
+        "You are a relevance judge. Your sole task is to decide if a text chunk "
+        "is relevant to a question. Respond with a single word: YES or NO."
+    )
+    user = (
+        f"Question: {question}\n\n"
+        f"Text chunk:\n{chunk_content}\n\n"
+        "Is this chunk relevant to the question above? Answer YES or NO only."
+    )
+    return system, user
