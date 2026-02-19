@@ -407,8 +407,12 @@ class NotesWindow(Adw.ApplicationWindow):
         note_id = getattr(row, "note_id", None)
         if note_id is None:
             return
-        self._current_note_id = int(note_id)
-        note = self._repo.get_note(self._current_note_id)
+        self.open_note(int(note_id))
+
+    def open_note(self, note_id: int) -> None:
+        """Open a note in preview mode. Can be called from other dialogs."""
+        self._current_note_id = note_id
+        note = self._repo.get_note(note_id)
         if note is None:
             self._toast("Note not found")
             return
@@ -1146,6 +1150,7 @@ class AskDialog(Adw.Window):
         self._running = False
         self._cancel = threading.Event()
         self._pulse_id = None
+        self._source_contexts: list[dict] = []
 
         self.set_transient_for(parent)
         self.set_modal(True)
@@ -1200,6 +1205,13 @@ class AskDialog(Adw.Window):
         box.set_margin_start(16)
         box.set_margin_end(16)
 
+        # Status label shown during retrieval/generation phases
+        self._status_label = Gtk.Label()
+        self._status_label.add_css_class("dim-label")
+        self._status_label.set_halign(Gtk.Align.START)
+        self._status_label.set_visible(False)
+        box.append(self._status_label)
+
         answer_scroll = Gtk.ScrolledWindow()
         answer_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         answer_scroll.set_vexpand(True)
@@ -1209,6 +1221,16 @@ class AskDialog(Adw.Window):
         self._answer.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         answer_scroll.set_child(self._answer)
         box.append(answer_scroll)
+
+        # Detect clicks on note-title hyperlinks
+        click_ctrl = Gtk.GestureClick.new()
+        click_ctrl.connect("pressed", self._on_text_clicked)
+        self._answer.add_controller(click_ctrl)
+
+        # Change cursor when hovering over hyperlinks
+        motion_ctrl = Gtk.EventControllerMotion.new()
+        motion_ctrl.connect("motion", self._on_answer_motion)
+        self._answer.add_controller(motion_ctrl)
 
         tv.set_content(box)
         self.set_content(tv)
@@ -1241,8 +1263,14 @@ class AskDialog(Adw.Window):
     def _worker(self, question: str) -> None:
         assert self._rag is not None
         rag = self._rag.clone_for_thread()
+
+        def status_cb(msg: str) -> None:
+            GLib.idle_add(self._set_status, msg)
+
         try:
-            for chunk in rag.ask_stream(question, cancel_cb=self._cancel.is_set):
+            for chunk in rag.ask_stream(
+                question, cancel_cb=self._cancel.is_set, status_cb=status_cb
+            ):
                 GLib.idle_add(self._apply, chunk)
             GLib.idle_add(self._done)
         except Exception as exc:
@@ -1250,19 +1278,96 @@ class AskDialog(Adw.Window):
         finally:
             rag.close()
 
+    def _set_status(self, msg: str) -> bool:
+        self._status_label.set_text(msg)
+        self._status_label.set_visible(bool(msg))
+        return False
+
     def _apply(self, c: dict) -> bool:
         # Stream both thinking and answer to the same buffer
         td = str(c.get("thinking_delta", ""))
         ad = str(c.get("answer_delta", ""))
         if td or ad:
+            self._set_status("")  # Clear status on first token
             b = self._answer.get_buffer()
             if td:
                 b.insert(b.get_end_iter(), td)
             if ad:
                 b.insert(b.get_end_iter(), ad)
         if c.get("done"):
+            self._set_status("")
             self._progress.set_visible(False)
+            sources = c.get("sources")
+            if sources:
+                self._source_contexts = sources
+                self._linkify()
         return False
+
+    def _linkify(self) -> None:
+        """Apply clickable link tags to note titles found in the answer buffer."""
+        if not self._source_contexts:
+            return
+        buf = self._answer.get_buffer()
+        full_text = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), True)
+        tag_table = buf.get_tag_table()
+        for ctx in self._source_contexts:
+            note_id = ctx["id"]
+            title = ctx["title"]
+            if not title or title == "Untitled":
+                continue
+            tag_name = f"note-link-{note_id}"
+            tag = tag_table.lookup(tag_name)
+            if tag is None:
+                tag = buf.create_tag(
+                    tag_name,
+                    foreground="#3584e4",
+                    underline=Pango.Underline.SINGLE,
+                )
+            start = 0
+            while True:
+                idx = full_text.find(title, start)
+                if idx == -1:
+                    break
+                it_start = buf.get_iter_at_offset(idx)
+                it_end = buf.get_iter_at_offset(idx + len(title))
+                buf.apply_tag(tag, it_start, it_end)
+                start = idx + len(title)
+
+    def _iter_at_xy(self, x: float, y: float) -> Gtk.TextIter | None:
+        """Convert widget-relative coordinates to a TextIter."""
+        bx, by = self._answer.window_to_buffer_coords(
+            Gtk.TextWindowType.WIDGET, int(x), int(y)
+        )
+        result = self._answer.get_iter_at_location(bx, by)
+        # PyGObject returns (bool, TextIter)
+        if isinstance(result, tuple):
+            found, it = result
+            return it if found else None
+        return result  # type: ignore[return-value]
+
+    def _on_text_clicked(
+        self, _gesture: Gtk.GestureClick, _n: int, x: float, y: float
+    ) -> None:
+        it = self._iter_at_xy(x, y)
+        if it is None:
+            return
+        for tag in it.get_tags():
+            name = tag.get_property("name")
+            if name and name.startswith("note-link-"):
+                note_id = int(name.split("-")[-1])
+                self._parent.open_note(note_id)
+                self.close()
+                return
+
+    def _on_answer_motion(
+        self, _ctrl: Gtk.EventControllerMotion, x: float, y: float
+    ) -> None:
+        it = self._iter_at_xy(x, y)
+        is_link = it is not None and any(
+            t.get_property("name") and t.get_property("name").startswith("note-link-")
+            for t in it.get_tags()
+        )
+        self._answer.set_cursor_from_name("pointer" if is_link else "text")
 
     def _done(self) -> bool:
         self._running = False
@@ -1275,6 +1380,7 @@ class AskDialog(Adw.Window):
         return False
 
     def _err(self, msg: str) -> bool:
+        self._set_status("")
         self._progress.set_visible(False)
         b = self._answer.get_buffer()
         b.set_text(f"Error: {msg}")

@@ -80,6 +80,11 @@ class RagService:
         logger.debug(f"System message: {system}")
         logger.debug(f"User prompt (first 300 chars): {user_prompt[:300]}...")
 
+        sources = [
+            {"id": int(c["id"]), "title": c.get("title", "Untitled")} for c in contexts
+        ]
+        if status_cb is not None:
+            status_cb("Generating answer…")
         for chunk in self._client.generate_stream(user_prompt, system=system):
             if cancel_cb is not None and cancel_cb():
                 logger.info("RAG query cancelled by user")
@@ -88,6 +93,7 @@ class RagService:
                     "thinking_delta": "",
                     "done": True,
                     "cancelled": True,
+                    "sources": sources,
                 }
                 return
             yield {
@@ -101,6 +107,7 @@ class RagService:
             "answer_delta": "",
             "thinking_delta": "",
             "done": True,
+            "sources": sources,
         }
 
     def clone_for_thread(self) -> RagService:
