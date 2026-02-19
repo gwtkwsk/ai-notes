@@ -13,6 +13,8 @@
 - After introducing code changes always run tests and linters.
 - Use type hints in Python code everywhere.
 - While debugging application issues always prefer writing tests instead of running the application.
+- Before implementing a task use a subagent to provide a detailed plan.
+- Use another subagent to implement the task based on the plan.
 - After implementing a feature or fixing a bug run code review in subagent for modified code. Subagent should provide a list of found issues. Then run another subagent to fix the issues. 
 - After code review use subagents with a minimal context to run and fix linters and tests after making code changes to preserve the main context. Pass a minimal context to the subagent to ensure it can understand code changes.
 
