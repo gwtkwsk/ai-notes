@@ -5,7 +5,7 @@ from typing import NotRequired, TypedDict
 from langgraph.graph import END, StateGraph
 
 from app.rag.index import RagIndex
-from app.rag.ollama_client import OllamaClient
+from app.rag.llm_client import LLMClient
 from app.rag.prompts import build_prompt, format_contexts
 
 
@@ -15,7 +15,7 @@ class RagState(TypedDict):
     answer: NotRequired[str]
 
 
-def build_graph(index: RagIndex, client: OllamaClient) -> object:
+def build_graph(index: RagIndex, client: LLMClient) -> object:
     graph = StateGraph(RagState)
 
     def retrieve(state: RagState) -> RagState:

@@ -4,16 +4,22 @@ from __future__ import annotations
 
 import json
 import os
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-_CONFIG_VERSION = 1
+_CONFIG_VERSION = 2
 
 
 def _default_config_path() -> Path:
     """Get default config file path following XDG spec."""
     config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
     return config_home / "disco-notes" / "config.json"
+
+
+class LLMProvider(StrEnum):
+    OLLAMA = "ollama"
+    OPENAI_COMPATIBLE = "openai_compatible"
 
 
 class Config:
@@ -30,6 +36,7 @@ class Config:
         try:
             with open(self._path, encoding="utf-8") as f:
                 data = json.load(f)
+                data = self._migrate(data)
                 # Validate version
                 if data.get("version") != _CONFIG_VERSION:
                     return self._defaults()
@@ -37,11 +44,21 @@ class Config:
         except (OSError, json.JSONDecodeError):
             return self._defaults()
 
+    def _migrate(self, data: dict[str, Any]) -> dict[str, Any]:
+        if data.get("version") == 1:
+            data["llm_provider"] = LLMProvider.OLLAMA.value
+            data["llm_base_url"] = data.pop("ollama_base_url", "http://localhost:11434")
+            data["llm_api_key"] = ""
+            data["version"] = 2
+        return data
+
     def _defaults(self) -> dict[str, Any]:
         """Return default configuration."""
         return {
-            "version": _CONFIG_VERSION,
-            "ollama_base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            "version": 2,
+            "llm_provider": LLMProvider.OLLAMA.value,
+            "llm_base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            "llm_api_key": "",
             "embed_model": os.getenv("OLLAMA_EMBED_MODEL", "qwen3-embedding:8b"),
             "llm_model": os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:7b"),
             "top_k": int(os.getenv("RAG_TOP_K", "5")),
@@ -59,8 +76,20 @@ class Config:
     # -- Getters with env var fallback --
 
     @property
-    def ollama_base_url(self) -> str:
-        return str(self._data.get("ollama_base_url", "http://localhost:11434"))
+    def llm_provider(self) -> LLMProvider:
+        val = self._data.get("llm_provider", LLMProvider.OLLAMA.value)
+        try:
+            return LLMProvider(val)
+        except ValueError:
+            return LLMProvider.OLLAMA
+
+    @property
+    def llm_base_url(self) -> str:
+        return str(self._data.get("llm_base_url", "http://localhost:11434"))
+
+    @property
+    def llm_api_key(self) -> str:
+        return str(self._data.get("llm_api_key", ""))
 
     @property
     def embed_model(self) -> str:
@@ -76,8 +105,14 @@ class Config:
 
     # -- Setters --
 
-    def set_ollama_base_url(self, value: str) -> None:
-        self._data["ollama_base_url"] = value.strip()
+    def set_llm_provider(self, value: LLMProvider) -> None:
+        self._data["llm_provider"] = value.value
+
+    def set_llm_base_url(self, value: str) -> None:
+        self._data["llm_base_url"] = value.strip()
+
+    def set_llm_api_key(self, value: str) -> None:
+        self._data["llm_api_key"] = value.strip()
 
     def set_embed_model(self, value: str) -> None:
         self._data["embed_model"] = value.strip()

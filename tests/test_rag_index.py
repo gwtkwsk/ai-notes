@@ -1,14 +1,11 @@
+from collections.abc import Generator
 from pathlib import Path
 
 from app.data.repository import Repository
 from app.rag.index import RagIndex
-from app.rag.ollama_client import OllamaClient
 
 
-class FakeOllama(OllamaClient):
-    def __init__(self) -> None:
-        pass
-
+class FakeOllama:
     def embed(self, text: str) -> list[float]:
         lowered = text.lower()
         if "python" in lowered:
@@ -19,6 +16,15 @@ class FakeOllama(OllamaClient):
 
     def generate(self, prompt: str, system: str | None = None) -> str:
         return "ok"
+
+    def generate_stream(
+        self, prompt: str, system: str | None = None
+    ) -> Generator[str, None, None]:
+        return
+        yield  # make it a generator
+
+    def check_connection(self) -> tuple[bool, str]:
+        return True, "ok"
 
 
 def test_build_index_and_query(tmp_path: Path) -> None:

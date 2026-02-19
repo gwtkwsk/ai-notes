@@ -5,8 +5,9 @@ from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
 
 from app.data.repository import Repository
+from app.rag.client_factory import create_llm_client
 from app.rag.index import RagIndex
-from app.rag.ollama_client import OllamaClient
+from app.rag.llm_client import LLMClient
 from app.rag.prompts import build_prompt, format_contexts
 
 if TYPE_CHECKING:
@@ -20,11 +21,7 @@ class RagService:
         self._repo = repo
         self._db_path = repo.db_path
         self._config = config
-        self._client = OllamaClient(
-            config.ollama_base_url,
-            config.embed_model,
-            config.llm_model,
-        )
+        self._client: LLMClient = create_llm_client(config)
         self._index = RagIndex(repo, self._client)
 
         self._graph: Any | None = None

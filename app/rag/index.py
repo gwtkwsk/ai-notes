@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 from app.data.repository import Repository
 from app.rag.config import CHUNK_MAX_CHARS, TOP_K
-from app.rag.ollama_client import OllamaClient
+from app.rag.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ _HEADING_SPLIT_RE = re.compile(r"(?=^#{1,6}\s)", re.MULTILINE)
 
 
 class RagIndex:
-    def __init__(self, repo: Repository, client: OllamaClient) -> None:
+    def __init__(self, repo: Repository, client: LLMClient) -> None:
         self._repo = repo
         self._client = client
 

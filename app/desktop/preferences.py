@@ -13,8 +13,16 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
+from app.config import LLMProvider  # noqa: E402
+
 if TYPE_CHECKING:
     from app.config import Config
+
+_OLLAMA_DEFAULT = "http://localhost:11434"
+_OPENAI_DEFAULT = "http://localhost:1234"
+
+_PROVIDER_LABELS = ["Ollama (local)", "OpenAI Compatible"]
+_PROVIDER_ENUM = [LLMProvider.OLLAMA, LLMProvider.OPENAI_COMPATIBLE]
 
 
 class PreferencesWindow(Adw.PreferencesWindow):
@@ -32,7 +40,9 @@ class PreferencesWindow(Adw.PreferencesWindow):
 
         # Store initial values to detect changes
         self._initial_values = {
-            "base_url": config.ollama_base_url,
+            "llm_provider": config.llm_provider,
+            "base_url": config.llm_base_url,
+            "api_key": config.llm_api_key,
             "embed_model": config.embed_model,
             "llm_model": config.llm_model,
             "top_k": config.top_k,
@@ -42,22 +52,42 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self.set_modal(True)
         self.set_search_enabled(False)
 
-        # ── RAG / Ollama page ──
+        # ── RAG / LLM page ──
         rag_page = Adw.PreferencesPage()
         rag_page.set_title("RAG")
         rag_page.set_icon_name("document-properties-symbolic")
 
-        # Group: Ollama Connection
-        ollama_group = Adw.PreferencesGroup()
-        ollama_group.set_title("Ollama Connection")
-        ollama_group.set_description(
-            "Configure the local Ollama server for embeddings and LLM queries."
+        # Group: LLM Connection
+        llm_group = Adw.PreferencesGroup()
+        llm_group.set_title("LLM Connection")
+        llm_group.set_description(
+            "Configure the LLM provider for embeddings and queries."
         )
+
+        # Provider selector
+        self._provider_row = Adw.ComboRow()
+        self._provider_row.set_title("Provider")
+        provider_model = Gtk.StringList.new(_PROVIDER_LABELS)
+        self._provider_row.set_model(provider_model)
+        current_idx = 1 if config.llm_provider == LLMProvider.OPENAI_COMPATIBLE else 0
+        self._provider_row.set_selected(current_idx)
+        self._provider_row.connect("notify::selected", self._on_provider_changed)
+        llm_group.add(self._provider_row)
 
         self._base_url_row = Adw.EntryRow()
         self._base_url_row.set_title("Base URL")
-        self._base_url_row.set_text(self._config.ollama_base_url)
-        ollama_group.add(self._base_url_row)
+        self._base_url_row.set_text(config.llm_base_url)
+        llm_group.add(self._base_url_row)
+
+        self._api_key_row = Adw.EntryRow()
+        self._api_key_row.set_title("API Key")
+        self._api_key_row.set_text(config.llm_api_key)
+        llm_group.add(self._api_key_row)
+
+        # Hide API key row when Ollama is selected initially
+        self._api_key_row.set_visible(
+            config.llm_provider == LLMProvider.OPENAI_COMPATIBLE
+        )
 
         # Test connection button
         test_row = Adw.ActionRow()
@@ -71,7 +101,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self._test_button.set_valign(Gtk.Align.CENTER)
         self._test_button.connect("clicked", self._on_test_connection)
         test_row.add_suffix(self._test_button)
-        ollama_group.add(test_row)
+        llm_group.add(test_row)
 
         # Group: Models
         models_group = Adw.PreferencesGroup()
@@ -92,7 +122,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self._top_k_row.set_value(float(self._config.top_k))
         models_group.add(self._top_k_row)
 
-        rag_page.add(ollama_group)
+        rag_page.add(llm_group)
         rag_page.add(models_group)
         self.add(rag_page)
 
@@ -117,19 +147,39 @@ class PreferencesWindow(Adw.PreferencesWindow):
         # Connect close signal to save
         self.connect("close-request", self._on_close)
 
+    def _on_provider_changed(self, row: Adw.ComboRow, _param: object) -> None:
+        """Show/hide API key row and auto-switch default URL when provider changes."""
+        selected = row.get_selected()
+        is_openai = selected == 1
+        self._api_key_row.set_visible(is_openai)
+
+        current_url = self._base_url_row.get_text()
+        if is_openai and current_url == _OLLAMA_DEFAULT:
+            self._base_url_row.set_text(_OPENAI_DEFAULT)
+        elif not is_openai and current_url == _OPENAI_DEFAULT:
+            self._base_url_row.set_text(_OLLAMA_DEFAULT)
+
     def _on_test_connection(self, _button: Gtk.Button) -> None:
-        """Test connection to Ollama server."""
+        """Test connection to the configured LLM server."""
         self._test_button.set_sensitive(False)
         self._status_label.set_label("Testing...")
         self._status_label.remove_css_class("success")
         self._status_label.remove_css_class("error")
         self._status_label.add_css_class("dimmed")
 
-        def test_in_thread() -> None:
-            from app.rag.ollama_client import OllamaClient
+        selected_idx = self._provider_row.get_selected()
+        base_url = self._base_url_row.get_text()
+        api_key = self._api_key_row.get_text()
 
-            base_url = self._base_url_row.get_text()
-            client = OllamaClient(base_url, "", "")
+        def test_in_thread() -> None:
+            if selected_idx == 0:
+                from app.rag.ollama_client import OllamaClient
+
+                client = OllamaClient(base_url, "", "")
+            else:
+                from app.rag.openai_client import OpenAICompatibleClient
+
+                client = OpenAICompatibleClient(base_url, "", "", api_key=api_key)
             success, message = client.check_connection()
 
             def update_ui() -> bool:
@@ -149,22 +199,28 @@ class PreferencesWindow(Adw.PreferencesWindow):
 
     def _on_close(self, _window: Adw.PreferencesWindow) -> bool:
         """Save preferences on close."""
-        # Get new values
+        selected_idx = self._provider_row.get_selected()
+        new_provider = _PROVIDER_ENUM[selected_idx]
         new_base_url = self._base_url_row.get_text()
+        new_api_key = self._api_key_row.get_text()
         new_embed_model = self._embed_model_row.get_text()
         new_llm_model = self._llm_model_row.get_text()
         new_top_k = int(self._top_k_row.get_value())
 
         # Check if anything changed
         changed = (
-            new_base_url != self._initial_values["base_url"]
+            new_provider != self._initial_values["llm_provider"]
+            or new_base_url != self._initial_values["base_url"]
+            or new_api_key != self._initial_values["api_key"]
             or new_embed_model != self._initial_values["embed_model"]
             or new_llm_model != self._initial_values["llm_model"]
             or new_top_k != self._initial_values["top_k"]
         )
 
         # Save to config
-        self._config.set_ollama_base_url(new_base_url)
+        self._config.set_llm_provider(new_provider)
+        self._config.set_llm_base_url(new_base_url)
+        self._config.set_llm_api_key(new_api_key)
         self._config.set_embed_model(new_embed_model)
         self._config.set_llm_model(new_llm_model)
         self._config.set_top_k(new_top_k)
