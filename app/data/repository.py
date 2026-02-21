@@ -1,10 +1,11 @@
 import logging
+import re
 import sqlite3
 from collections.abc import Iterable
 
 import sqlite_vec
 
-from app.data.schema import SCHEMA_SQL
+from app.data.schema import FTS_SQL, SCHEMA_SQL
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class Repository:
         self._migrate_embeddings_to_blob()
         self._conn.executescript(SCHEMA_SQL)
         self._conn.commit()
+        self._init_fts()
         # Migration: add is_favourite column for databases created before it existed.
         try:
             self._conn.execute(
@@ -36,6 +38,26 @@ class Repository:
             self._conn.commit()
         except Exception:
             pass  # column already exists
+
+    def _init_fts(self) -> None:
+        """Create FTS5 virtual table and sync triggers if they don't exist.
+
+        On first call (table absent), also populates the index from existing notes.
+        Safe to call on every startup because all DDL statements use IF NOT EXISTS.
+        """
+        try:
+            self._conn.execute("SELECT * FROM notes_fts LIMIT 0")
+            newly_created = False
+            logger.debug("FTS5 index already exists")
+        except sqlite3.OperationalError:
+            newly_created = True
+            logger.info("FTS5 table not found — will create and populate")
+
+        self._conn.executescript(FTS_SQL)  # all statements use IF NOT EXISTS
+        if newly_created:
+            self._conn.execute("INSERT INTO notes_fts(notes_fts) VALUES('rebuild')")
+            self._conn.commit()
+            logger.info("FTS5 index created and populated")
 
     def _migrate_embeddings_to_blob(self) -> None:
         """Drop old TEXT-based note_embeddings table so new BLOB schema is created."""
@@ -292,3 +314,63 @@ class Repository:
         logger.info("Clearing all embeddings from database")
         self._conn.execute("DELETE FROM note_embeddings")
         self._conn.commit()
+
+    def search_notes_by_bm25(self, query: str, top_k: int) -> list[dict]:
+        """Full-text BM25 search using SQLite FTS5.
+
+        Args:
+            query: User query string. Special FTS5 characters are sanitized.
+            top_k: Maximum number of results to return.
+
+        Returns:
+            List of note dicts with id, title, content, is_markdown fields,
+            ordered by BM25 relevance (most relevant first).
+        """
+        if not query.strip():
+            return []
+        safe_query = self._sanitize_fts_query(query)
+        if not safe_query:
+            return []
+        try:
+            cur = self._conn.execute(
+                """
+                SELECT
+                    n.id,
+                    n.title,
+                    n.content,
+                    n.is_markdown
+                FROM notes_fts
+                JOIN notes n ON n.id = notes_fts.rowid
+                WHERE notes_fts MATCH ?
+                ORDER BY rank
+                LIMIT ?
+                """,
+                (safe_query, top_k),
+            )
+            results = [dict(row) for row in cur.fetchall()]
+            logger.info(
+                f"BM25 search returned {len(results)} results for query: '{query[:50]}'"
+            )
+            return results
+        except sqlite3.OperationalError as exc:
+            logger.warning(f"BM25 search failed (FTS5 error): {exc}")
+            return []
+
+    @staticmethod
+    def _sanitize_fts_query(query: str) -> str:
+        """Sanitize a user query string for use as an FTS5 MATCH term.
+
+        Wraps each word in double-quotes to prevent FTS5 operator injection.
+        Empty or whitespace-only input returns an empty string.
+
+        Args:
+            query: Raw user query.
+
+        Returns:
+            FTS5-safe query string or empty string if no valid tokens.
+        """
+        cleaned = re.sub(r'["\^*()\[\]]', " ", query)
+        words = [w for w in cleaned.split() if w]
+        if not words:
+            return ""
+        return " ".join(f'"{w}"' for w in words)

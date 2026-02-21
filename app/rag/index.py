@@ -6,7 +6,8 @@ import struct
 from collections.abc import Callable
 
 from app.data.repository import Repository
-from app.rag.config import CHUNK_MAX_CHARS, TOP_K
+from app.rag.config import CHUNK_MAX_CHARS, FUSION_OVERSAMPLE_FACTOR, TOP_K
+from app.rag.fusion import reciprocal_rank_fusion
 from app.rag.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -159,6 +160,9 @@ class RagIndex:
         status_cb: Callable[[str], None] | None = None,
     ) -> list[dict]:
         logger.info(f"RAG query: '{question}' (top_k={top_k})")
+        # Fetch more candidates per leg before fusion for better recall.
+        fetch_k = top_k * FUSION_OVERSAMPLE_FACTOR
+
         if status_cb is not None:
             status_cb("Embedding the question")
         q_vec = self._client.embed(question)
@@ -166,17 +170,33 @@ class RagIndex:
             logger.warning("Failed to generate embedding for question")
             return []
         logger.info(f"Question embedded successfully (dimension={len(q_vec)})")
+
         if status_cb is not None:
             status_cb("Searching notes")
         query_blob = self._serialize_vector(q_vec)
-        results = self._repo.search_notes_by_embedding(query_blob, top_k)
-        logger.info(f"Found {len(results)} matching notes")
+
+        vector_results = self._repo.search_notes_by_embedding(query_blob, fetch_k)
+        bm25_results = self._repo.search_notes_by_bm25(question, fetch_k)
+
+        logger.info(
+            f"Vector search: {len(vector_results)} results, "
+            f"BM25 search: {len(bm25_results)} results"
+        )
+
+        fused = reciprocal_rank_fusion([vector_results, bm25_results])
+        results = fused[:top_k]
+
+        logger.info(
+            f"Hybrid search fused to {len(fused)} unique docs, returning {len(results)}"
+        )
         if results:
             for i, res in enumerate(results[:3]):
+                score = res.get("rrf_score")
+                score_str = f"{score:.4f}" if isinstance(score, float) else "N/A"
                 logger.debug(
                     f"  Result {i + 1}: id={res.get('id')}, "
                     f"title='{res.get('title', '')[:50]}', "
-                    f"distance={res.get('cosine_distance', 'N/A')}"
+                    f"rrf_score={score_str}"
                 )
         return results
 

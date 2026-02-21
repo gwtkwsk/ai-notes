@@ -1,4 +1,7 @@
+from collections.abc import Generator
 from pathlib import Path
+
+import pytest
 
 from app.data.repository import Repository
 
@@ -142,3 +145,56 @@ def test_search_notes_by_embedding(tmp_path: Path) -> None:
     assert results[0]["id"] == note_a
 
     repo.close()
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> Generator[Repository, None, None]:
+    r = Repository(str(tmp_path / "notes.db"))
+    yield r
+    r.close()
+
+
+class TestBm25Search:
+    def test_bm25_finds_note_by_keyword(self, repo: Repository) -> None:
+        repo.create_note("Sourdough Bread Recipe", "Mix flour water starter salt.")
+        repo.create_note("Python Tips", "Use list comprehensions for speed.")
+        results = repo.search_notes_by_bm25("sourdough", top_k=5)
+        assert len(results) >= 1
+        assert results[0]["title"] == "Sourdough Bread Recipe"
+
+    def test_bm25_returns_empty_for_no_match(self, repo: Repository) -> None:
+        repo.create_note("Python Tips", "Use list comprehensions.")
+        results = repo.search_notes_by_bm25("sourdough", top_k=5)
+        assert results == []
+
+    def test_bm25_empty_query_returns_empty(self, repo: Repository) -> None:
+        repo.create_note("Any Note", "Content here.")
+        results = repo.search_notes_by_bm25("", top_k=5)
+        assert results == []
+
+    def test_bm25_finds_by_title(self, repo: Repository) -> None:
+        repo.create_note("Meeting Notes Q1", "Discussed roadmap.")
+        results = repo.search_notes_by_bm25("Meeting Q1", top_k=5)
+        assert any(r["title"] == "Meeting Notes Q1" for r in results)
+
+    def test_bm25_result_has_expected_fields(self, repo: Repository) -> None:
+        repo.create_note("Test Note", "Some content.")
+        results = repo.search_notes_by_bm25("Test", top_k=5)
+        assert len(results) >= 1
+        assert "id" in results[0]
+        assert "title" in results[0]
+        assert "content" in results[0]
+        assert "is_markdown" in results[0]
+
+    def test_bm25_reflects_updated_content(self, repo: Repository) -> None:
+        note_id = repo.create_note("Python Tips", "Old content about lists.")
+        repo.update_note(note_id, "Python Tips", "New content about generators.")
+        assert repo.search_notes_by_bm25("generators", top_k=5) != []
+        # old content should no longer be indexed
+        results_lists = repo.search_notes_by_bm25("lists", top_k=5)
+        assert all(r["id"] != note_id for r in results_lists)
+
+    def test_bm25_does_not_return_deleted_note(self, repo: Repository) -> None:
+        note_id = repo.create_note("Sourdough Recipe", "Mix starter and flour.")
+        repo.delete_note(note_id)
+        assert repo.search_notes_by_bm25("sourdough", top_k=5) == []
