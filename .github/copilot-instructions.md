@@ -12,6 +12,12 @@
 - Manage Python dependencies using uv, without pip.
 - Use type hints in Python code everywhere.
 - Write tests for important features and edge cases.
+- Use following coding principles:
+  - DRY - Don't Repeat Yourself
+  - KISS - Keep It Simple, Stupid
+  - YAGNI - You Aren't Gonna Need It
+  - Clean Code principles
+  - SOLID
 
 # Workflow
 - Before implementing a task use a subagent to provide a detailed plan.
@@ -26,17 +32,22 @@ This project follows a modular RAG architecture. While implementig new functiona
 - The final RAG should be composed from individual modules.
 - Modules can be easily replaced or updated without affecting the overall system.
 
-# Running tests
+# CLI commands
+
+Run following commands in the terminal exactly as they are written.
+These commands are auto-approved and don't require manual acceptance.
+
+## Running tests
 
 uv run --group dev python -m pytest tests/
 
-# Running linting
+## Running linting
 
 uv run --group dev ruff check
 uv run --group dev ruff format
 uv run --group dev pyright
 
-# Running the application
+## Running the application
 
 python desktop.py # always run outside of uv
 

@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 from app.data.repository import Repository
 from app.rag.chunk_selector import ChunkSelector
 from app.rag.client_factory import create_llm_client
-from app.rag.config import CHUNK_SELECTION_ENABLED
 from app.rag.index import RagIndex
 from app.rag.llm_client import LLMClient
 from app.rag.prompts import build_prompt, format_contexts
@@ -26,7 +25,7 @@ class RagService:
         self._client: LLMClient = create_llm_client(config)
         self._index = RagIndex(repo, self._client)
         self._chunk_selector: ChunkSelector | None = (
-            ChunkSelector(self._client) if CHUNK_SELECTION_ENABLED else None
+            ChunkSelector(self._client) if config.chunk_selection_enabled else None
         )
 
         self._graph: Any | None = None
@@ -58,7 +57,10 @@ class RagService:
                     "Użyj streamingu albo doinstaluj zależności projektu."
                 ) from exc
             self._graph = build_graph(
-                self._index, self._client, chunk_selector=self._chunk_selector
+                self._index,
+                self._client,
+                chunk_selector=self._chunk_selector,
+                use_hybrid=self._config.hybrid_search_enabled,
             )
 
         assert self._graph is not None
@@ -81,7 +83,11 @@ class RagService:
         status_cb: Callable[[str], None] | None = None,
     ) -> Iterator[dict]:
         logger.info(f"RAG query started: '{question}'")
-        contexts = self._index.query(question, status_cb=status_cb)
+        contexts = self._index.query(
+            question,
+            use_hybrid=self._config.hybrid_search_enabled,
+            status_cb=status_cb,
+        )
         logger.info(f"Retrieved {len(contexts)} context documents")
 
         if self._chunk_selector is not None:

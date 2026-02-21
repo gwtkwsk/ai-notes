@@ -21,6 +21,7 @@ def build_graph(
     index: RagIndex,
     client: LLMClient,
     chunk_selector: ChunkSelector | None = None,
+    use_hybrid: bool = True,
 ) -> object:
     """Build the RAG LangGraph pipeline.
 
@@ -30,6 +31,8 @@ def build_graph(
         chunk_selector: Optional ChunkSelector instance. When provided, adds a
             selection step between retrieval and generation that filters out
             irrelevant chunks.
+        use_hybrid: When True, uses hybrid search (vector + BM25 via RRF
+            fusion). When False, uses vector-only search.
 
     Returns:
         Compiled LangGraph runnable.
@@ -37,7 +40,7 @@ def build_graph(
     graph = StateGraph(RagState)
 
     def retrieve(state: RagState) -> RagState:
-        contexts = index.query(state["question"])
+        contexts = index.query(state["question"], use_hybrid=use_hybrid)
         return {"question": state["question"], "contexts": contexts}
 
     def generate(state: RagState) -> RagState:

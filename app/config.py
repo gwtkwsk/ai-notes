@@ -8,7 +8,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-_CONFIG_VERSION = 2
+_CONFIG_VERSION = 3
 
 
 def _default_config_path() -> Path:
@@ -50,18 +50,24 @@ class Config:
             data["llm_base_url"] = data.pop("ollama_base_url", "http://localhost:11434")
             data["llm_api_key"] = ""
             data["version"] = 2
+        if data.get("version") == 2:
+            data["hybrid_search_enabled"] = True
+            data["chunk_selection_enabled"] = False
+            data["version"] = 3
         return data
 
     def _defaults(self) -> dict[str, Any]:
         """Return default configuration."""
         return {
-            "version": 2,
+            "version": 3,
             "llm_provider": LLMProvider.OLLAMA.value,
             "llm_base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
             "llm_api_key": "",
             "embed_model": os.getenv("OLLAMA_EMBED_MODEL", "qwen3-embedding:8b"),
             "llm_model": os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:7b"),
             "top_k": int(os.getenv("RAG_TOP_K", "5")),
+            "hybrid_search_enabled": True,
+            "chunk_selection_enabled": False,
         }
 
     def save(self) -> None:
@@ -103,6 +109,14 @@ class Config:
     def top_k(self) -> int:
         return int(self._data.get("top_k", 5))
 
+    @property
+    def hybrid_search_enabled(self) -> bool:
+        return bool(self._data.get("hybrid_search_enabled", True))
+
+    @property
+    def chunk_selection_enabled(self) -> bool:
+        return bool(self._data.get("chunk_selection_enabled", False))
+
     # -- Setters --
 
     def set_llm_provider(self, value: LLMProvider) -> None:
@@ -122,3 +136,9 @@ class Config:
 
     def set_top_k(self, value: int) -> None:
         self._data["top_k"] = max(1, int(value))
+
+    def set_hybrid_search_enabled(self, value: bool) -> None:
+        self._data["hybrid_search_enabled"] = bool(value)
+
+    def set_chunk_selection_enabled(self, value: bool) -> None:
+        self._data["chunk_selection_enabled"] = bool(value)

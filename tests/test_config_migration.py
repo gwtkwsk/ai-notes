@@ -1,4 +1,4 @@
-"""Tests for Config migration and v2 defaults."""
+"""Tests for Config migration and v2/v3 defaults."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from app.config import Config, LLMProvider
 
 
 def test_migration_v1_to_v2(tmp_path: Path) -> None:
-    """Config loaded from a v1 file should be migrated to v2."""
+    """Config loaded from a v1 file should be migrated to v3 (through v2)."""
     config_file = tmp_path / "config.json"
     v1_data = {
         "version": 1,
@@ -28,10 +28,36 @@ def test_migration_v1_to_v2(tmp_path: Path) -> None:
     assert config.embed_model == "some-embed"
     assert config.llm_model == "some-llm"
     assert config.top_k == 3
+    # v3 fields should receive their defaults after migration
+    assert config.hybrid_search_enabled is True
+    assert config.chunk_selection_enabled is False
+
+
+def test_migration_v2_to_v3(tmp_path: Path) -> None:
+    """Config loaded from a v2 file should be migrated to v3."""
+    config_file = tmp_path / "config.json"
+    v2_data = {
+        "version": 2,
+        "llm_provider": "ollama",
+        "llm_base_url": "http://localhost:11434",
+        "llm_api_key": "",
+        "embed_model": "embed-model",
+        "llm_model": "llm-model",
+        "top_k": 5,
+    }
+    config_file.write_text(json.dumps(v2_data), encoding="utf-8")
+
+    config = Config(config_path=config_file)
+
+    assert config.llm_provider == LLMProvider.OLLAMA
+    assert config.top_k == 5
+    # New v3 fields should have their defaults after migration
+    assert config.hybrid_search_enabled is True
+    assert config.chunk_selection_enabled is False
 
 
 def test_defaults_v2(tmp_path: Path) -> None:
-    """New Config on a nonexistent path should have correct v2 defaults."""
+    """New Config on a nonexistent path should have correct defaults."""
     config_file = tmp_path / "nonexistent" / "config.json"
     config = Config(config_path=config_file)
 
@@ -41,6 +67,8 @@ def test_defaults_v2(tmp_path: Path) -> None:
     assert config.embed_model != ""
     assert config.llm_model != ""
     assert config.top_k >= 1
+    assert config.hybrid_search_enabled is True
+    assert config.chunk_selection_enabled is False
 
 
 def test_set_and_save_llm_provider(tmp_path: Path) -> None:
@@ -57,3 +85,21 @@ def test_set_and_save_llm_provider(tmp_path: Path) -> None:
     assert config2.llm_provider == LLMProvider.OPENAI_COMPATIBLE
     assert config2.llm_base_url == "http://openai.example.com"
     assert config2.llm_api_key == "sk-secret"
+
+
+def test_set_and_save_rag_features(tmp_path: Path) -> None:
+    """Setting RAG feature flags, saving and reloading should persist the values."""
+    config_file = tmp_path / "config.json"
+    config = Config(config_path=config_file)
+
+    # Defaults
+    assert config.hybrid_search_enabled is True
+    assert config.chunk_selection_enabled is False
+
+    config.set_hybrid_search_enabled(False)
+    config.set_chunk_selection_enabled(True)
+    config.save()
+
+    config2 = Config(config_path=config_file)
+    assert config2.hybrid_search_enabled is False
+    assert config2.chunk_selection_enabled is True

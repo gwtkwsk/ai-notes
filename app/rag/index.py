@@ -157,9 +157,10 @@ class RagIndex:
         self,
         question: str,
         top_k: int = TOP_K,
+        use_hybrid: bool = True,
         status_cb: Callable[[str], None] | None = None,
     ) -> list[dict]:
-        logger.info(f"RAG query: '{question}' (top_k={top_k})")
+        logger.info(f"RAG query: '{question}' (top_k={top_k}, hybrid={use_hybrid})")
         # Fetch more candidates per leg before fusion for better recall.
         fetch_k = top_k * FUSION_OVERSAMPLE_FACTOR
 
@@ -176,14 +177,18 @@ class RagIndex:
         query_blob = self._serialize_vector(q_vec)
 
         vector_results = self._repo.search_notes_by_embedding(query_blob, fetch_k)
-        bm25_results = self._repo.search_notes_by_bm25(question, fetch_k)
 
-        logger.info(
-            f"Vector search: {len(vector_results)} results, "
-            f"BM25 search: {len(bm25_results)} results"
-        )
+        if use_hybrid:
+            bm25_results = self._repo.search_notes_by_bm25(question, fetch_k)
+            logger.info(
+                f"Vector search: {len(vector_results)} results, "
+                f"BM25 search: {len(bm25_results)} results"
+            )
+            fused = reciprocal_rank_fusion([vector_results, bm25_results])
+        else:
+            logger.info(f"Vector-only search: {len(vector_results)} results")
+            fused = vector_results
 
-        fused = reciprocal_rank_fusion([vector_results, bm25_results])
         results = fused[:top_k]
 
         # BM25 results carry the full note content; replace each result's
