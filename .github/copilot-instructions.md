@@ -18,6 +18,12 @@
 - After implementing a feature or fixing a bug run code review in subagent for modified code. Subagent should provide a list of found issues. Then run another subagent to fix the issues. 
 - After code review use subagents with a minimal context to run and fix linters and tests after making code changes to preserve the main context. Pass a minimal context to the subagent to ensure it can understand code changes.
 
+# Modular RAG Architecture
+This project follows a modular RAG architecture. While implementig new functionalities for RAG, ensure that you create separate modules for each component of the RAG architecture. 
+- Each module should be easy to test in separation.
+- The final RAG should be composed from individual modules.
+- Modules can be easily replaced or updated without affecting the overall system.
+
 # Running tests
 
 uv run --group dev python -m pytest tests/
