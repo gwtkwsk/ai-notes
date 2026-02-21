@@ -10,13 +10,15 @@
 
 - When working with Python ensure you use a virtual environment managed by uv.
 - Manage Python dependencies using uv, without pip.
-- After introducing code changes always run tests and linters.
 - Use type hints in Python code everywhere.
-- While debugging application issues always prefer writing tests instead of running the application.
+- Write tests for important features and edge cases.
+
+# Workflow
 - Before implementing a task use a subagent to provide a detailed plan.
 - Use another subagent to implement the task based on the plan.
-- After implementing a feature or fixing a bug run code review in subagent for modified code. Subagent should provide a list of found issues. Then run another subagent to fix the issues. 
-- After code review use subagents with a minimal context to run and fix linters and tests after making code changes to preserve the main context. Pass a minimal context to the subagent to ensure it can understand code changes.
+- Run code review in subagent for modified code to provide a list of issues.
+- Run another subagent to fix the issues.
+- Use subagents to run and fix linters and tests.
 
 # Modular RAG Architecture
 This project follows a modular RAG architecture. While implementig new functionalities for RAG, ensure that you create separate modules for each component of the RAG architecture. 
