@@ -178,12 +178,22 @@ class Repository:
             )
             return []
 
+        # Use a correlated subquery to find the best-matching chunk's text for each
+        # note. The outer MIN() determines the winning note ranking; the correlated
+        # subquery retrieves the actual text of the closest chunk so that the LLM
+        # receives a focused chunk rather than the full note content.
         cur = self._conn.execute(
             """
             SELECT
                 n.id,
                 n.title,
-                n.content,
+                (
+                    SELECT ne2.chunk_text
+                    FROM note_embeddings ne2
+                    WHERE ne2.note_id = n.id
+                    ORDER BY vec_distance_cosine(ne2.vector, ?) ASC
+                    LIMIT 1
+                ) AS content,
                 n.is_markdown,
                 MIN(vec_distance_cosine(ne.vector, ?)) AS cosine_distance
             FROM notes n
@@ -192,11 +202,34 @@ class Repository:
             ORDER BY cosine_distance ASC
             LIMIT ?
             """,
-            (query_vector, top_k),
+            (query_vector, query_vector, top_k),
         )
         results = [dict(row) for row in cur.fetchall()]
         logger.info(f"Database returned {len(results)} results")
         return results
+
+    def get_best_chunk_text(self, note_id: int, query_vector: bytes) -> str | None:
+        """Return the text of the chunk from a note closest to the query vector.
+
+        Args:
+            note_id: The note to look up chunks for.
+            query_vector: Serialised float32 query embedding.
+
+        Returns:
+            The chunk_text of the nearest chunk, or None if no chunks exist.
+        """
+        cur = self._conn.execute(
+            """
+            SELECT chunk_text
+            FROM note_embeddings
+            WHERE note_id = ?
+            ORDER BY vec_distance_cosine(vector, ?) ASC
+            LIMIT 1
+            """,
+            (note_id, query_vector),
+        )
+        row = cur.fetchone()
+        return row["chunk_text"] if row else None
 
     def list_tags(self) -> list[dict]:
         cur = self._conn.execute("SELECT * FROM tags ORDER BY name COLLATE NOCASE")

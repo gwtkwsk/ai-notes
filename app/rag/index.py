@@ -186,6 +186,17 @@ class RagIndex:
         fused = reciprocal_rank_fusion([vector_results, bm25_results])
         results = fused[:top_k]
 
+        # BM25 results carry the full note content; replace each result's
+        # content with the nearest chunk text so the LLM receives a focused
+        # chunk rather than a whole note.  Vector-search results already
+        # have chunk text, but the lookup is cheap and keeps the logic uniform.
+        for result in results:
+            note_id = result.get("id")
+            if note_id is not None:
+                chunk_text = self._repo.get_best_chunk_text(note_id, query_blob)
+                if chunk_text is not None:
+                    result["content"] = chunk_text
+
         logger.info(
             f"Hybrid search fused to {len(fused)} unique docs, returning {len(results)}"
         )
