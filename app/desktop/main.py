@@ -41,7 +41,7 @@ _CSS = """\
 
 def _default_db_path() -> str:
     data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    app_dir = data_home / "disco-notes"
+    app_dir = data_home / "ai-notes"
     app_dir.mkdir(parents=True, exist_ok=True)
     return str(app_dir / "notes.db")
 
@@ -72,7 +72,7 @@ class NotesWindow(Adw.ApplicationWindow):
         self._reindex_pulse_id: int | None = None
         self._header_packed: list[Gtk.Widget] = []
 
-        self.set_title("Disco Notes")
+        self.set_title("AI Notes")
         self.set_default_size(1200, 780)
         self._load_css()
 
@@ -1394,7 +1394,7 @@ class AskDialog(Adw.Window):
 class DesktopApplication(Adw.Application):
     def __init__(self) -> None:
         super().__init__(
-            application_id="org.disco.DiscoNotes",
+            application_id="ai.notes.AINotes",
             flags=Gio.ApplicationFlags.FLAGS_NONE,
         )
         self._config: Config | None = None
@@ -1405,7 +1405,7 @@ class DesktopApplication(Adw.Application):
     def do_activate(self) -> None:
         if self._window is None:
             self._config = Config()
-            db_path = os.getenv("DISCO_NOTES_DB", _default_db_path())
+            db_path = os.getenv("AI_NOTES_DB", _default_db_path())
             self._repo = Repository(db_path)
             self._rag_service = RagService(self._repo, self._config)
             self._window = NotesWindow(

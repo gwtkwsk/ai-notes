@@ -1,16 +1,16 @@
-app-id: org.disco.DiscoNotes
+app-id: ai.notes.AINotes
 runtime: org.gnome.Platform
 runtime-version: "48"
 sdk: org.gnome.Sdk
-command: disco-notes
+command: ai-notes
 finish-args:
   - --share=network
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
   - --device=dri
-  - --filesystem=xdg-data/disco-notes:create
-  - --own-name=org.disco.DiscoNotes
+  - --filesystem=xdg-data/ai-notes:create
+  - --own-name=ai.notes.AINotes
 modules:
   - name: python3-dependencies
     buildsystem: simple
@@ -19,7 +19,7 @@ modules:
         path: ../build/deps
     build-commands:
           - pip3 install --no-index --find-links=. --prefix=/app --no-build-isolation --ignore-installed *.whl
-  - name: disco-notes
+  - name: ai-notes
     buildsystem: simple
     sources:
       - type: dir
@@ -32,4 +32,4 @@ modules:
           - .venv
     build-commands:
       - pip3 install --no-index --prefix=/app --no-build-isolation --no-deps .
-      - install -Dm644 flatpak/org.disco.DiscoNotes.desktop /app/share/applications/org.disco.DiscoNotes.desktop
+      - install -Dm644 flatpak/ai.notes.AINotes.desktop /app/share/applications/ai.notes.AINotes.desktop

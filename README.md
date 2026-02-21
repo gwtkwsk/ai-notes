@@ -1,4 +1,4 @@
-# Disco Notes (MVP)
+# AI Notes (MVP)
 
 Native GNOME notes app (GTK4/Libadwaita) with local SQLite, Markdown notes, tags, and Q&A over notes using RAG + Ollama.
 
@@ -35,13 +35,13 @@ python desktop.py
 The app stores data in:
 
 ```text
-~/.local/share/disco-notes/notes.db
+~/.local/share/ai-notes/notes.db
 ```
 
 You can override the database location:
 
 ```bash
-DISCO_NOTES_DB=/path/to/notes.db python desktop.py
+AI_NOTES_DB=/path/to/notes.db python desktop.py
 ```
 
 **Note:** If you run `python desktop.py` outside the `uv` environment, ensure that interpreter also has `sqlite-vec` available (required for RAG search)
@@ -73,25 +73,25 @@ Build and install as a Flatpak:
 This will:
 - Download all Python dependencies as pre-built wheels
 - Build the app with the GNOME SDK 48 (Python 3.12)
-- Create `build/disco-notes.flatpak` bundle for distribution
+- Create `build/ai-notes.flatpak` bundle for distribution
 - Install it locally for testing
 
 Run the Flatpak:
 
 ```bash
-flatpak run org.disco.DiscoNotes
+flatpak run ai.notes.AINotes
 ```
 
 The Flatpak stores data in:
 
 ```text
-~/.var/app/org.disco.DiscoNotes/data/disco-notes/notes.db
+~/.var/app/ai.notes.AINotes/data/ai-notes/notes.db
 ```
 
 To uninstall:
 
 ```bash
-flatpak uninstall org.disco.DiscoNotes
+flatpak uninstall ai.notes.AINotes
 ```
 
 ## Tests

@@ -5,8 +5,8 @@ MANIFEST=flatpak/manifest.yml
 BUILD_DIR=build/flatpak-build
 REPO_DIR=build/repo
 STATE_DIR=build/.flatpak-builder
-BUNDLE=build/disco-notes.flatpak
-APP_ID=org.disco.DiscoNotes
+BUNDLE=build/ai-notes.flatpak
+APP_ID=ai.notes.AINotes
 BRANCH=stable
 RUNTIME_REPO=https://dl.flathub.org/repo/
 

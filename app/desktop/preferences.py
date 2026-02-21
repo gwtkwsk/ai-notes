@@ -1,4 +1,4 @@
-"""Preferences window for Disco Notes."""
+"""Preferences window for AI Notes."""
 
 from __future__ import annotations
 
@@ -133,7 +133,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
 
         about_group = Adw.PreferencesGroup()
         about_label = Gtk.Label(
-            label="Disco Notes\nA note-taking app with RAG capabilities."
+            label="AI Notes\nA note-taking app with RAG capabilities."
         )
         about_label.set_margin_top(20)
         about_label.set_margin_bottom(20)

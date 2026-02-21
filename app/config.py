@@ -1,4 +1,4 @@
-"""Configuration management for Disco Notes."""
+"""Configuration management for AI Notes."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ _CONFIG_VERSION = 2
 def _default_config_path() -> Path:
     """Get default config file path following XDG spec."""
     config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    return config_home / "disco-notes" / "config.json"
+    return config_home / "ai-notes" / "config.json"
 
 
 class LLMProvider(StrEnum):

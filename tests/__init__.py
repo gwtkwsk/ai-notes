@@ -1,1 +1,1 @@
-"""Test suite for disco-notes."""
+"""Test suite for ai-notes."""

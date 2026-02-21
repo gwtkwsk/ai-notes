@@ -68,7 +68,7 @@ wheels = [
 ]
 
 [[package]]
-name = "disco-notes"
+name = "ai-notes"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

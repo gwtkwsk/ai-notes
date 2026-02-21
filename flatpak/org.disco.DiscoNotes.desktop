@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=Disco Notes
+Name=AI Notes
 Comment=Note-taking app with RAG support
-Exec=disco-notes
-Icon=org.disco.DiscoNotes
+Exec=ai-notes
+Icon=ai.notes.AINotes
 Terminal=false
 Categories=Office;Utility;
 StartupNotify=true

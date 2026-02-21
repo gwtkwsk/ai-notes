@@ -1,5 +1,5 @@
 [project]
-name = "disco-notes"
+name = "ai-notes"
 version = "0.1.0"
 description = "Notes app MVP with Python backend."
 readme = "README.md"
@@ -18,7 +18,7 @@ dev = [
 ]
 
 [project.scripts]
-disco-notes = "app.desktop.main:main"
+ai-notes = "app.desktop.main:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
