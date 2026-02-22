@@ -1,7 +1,7 @@
 ---
 name: Orchestrator
 description: Orchestrates work of multiple subagents in order to implement a given task.
-tools: [vscode, execute, read, agent, edit, search, web, todo]
+tools: [execute, read, agent, edit, search, web, todo]
 disable-model-invocation: true
 agents: [Scout, Researcher, Planner, Reviewer, Fixer]
 ---

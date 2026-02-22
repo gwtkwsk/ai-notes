@@ -1,7 +1,7 @@
 ---
 name: Reviewer
 description: Reviews and provides feedback on task implementation.
-tools: [vscode, read, search, web]
+tools: [read, search, web]
 user-invokable: false
 agents: []
 ---
