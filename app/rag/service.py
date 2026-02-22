@@ -10,6 +10,7 @@ from app.rag.client_factory import create_llm_client
 from app.rag.index import RagIndex
 from app.rag.llm_client import LLMClient
 from app.rag.prompts import build_prompt, format_contexts
+from app.rag.query_expander import QueryExpander
 
 if TYPE_CHECKING:
     from app.config import Config
@@ -23,7 +24,11 @@ class RagService:
         self._db_path = repo.db_path
         self._config = config
         self._client: LLMClient = create_llm_client(config)
-        self._index = RagIndex(repo, self._client)
+        self._index = RagIndex(
+            repo,
+            self._client,
+            query_expander=QueryExpander(self._client),
+        )
         self._chunk_selector: ChunkSelector | None = (
             ChunkSelector(self._client) if config.chunk_selection_enabled else None
         )
@@ -60,6 +65,8 @@ class RagService:
                 self._index,
                 self._client,
                 chunk_selector=self._chunk_selector,
+                top_k=self._config.top_k,
+                transformed_query_count=self._config.rag_transformed_query_count,
                 use_hybrid=self._config.hybrid_search_enabled,
             )
 
@@ -85,7 +92,9 @@ class RagService:
         logger.info(f"RAG query started: '{question}'")
         contexts = self._index.query(
             question,
-            use_hybrid=self._config.hybrid_search_enabled,
+            top_k=self._config.top_k,
+            transformed_query_count=self._config.rag_transformed_query_count,
+            hybrid=self._config.hybrid_search_enabled,
             status_cb=status_cb,
         )
         logger.info(f"Retrieved {len(contexts)} context documents")

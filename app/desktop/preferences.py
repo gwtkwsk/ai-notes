@@ -46,6 +46,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
             "embed_model": config.embed_model,
             "llm_model": config.llm_model,
             "top_k": config.top_k,
+            "rag_transformed_query_count": config.rag_transformed_query_count,
             "hybrid_search_enabled": config.hybrid_search_enabled,
             "chunk_selection_enabled": config.chunk_selection_enabled,
         }
@@ -123,6 +124,13 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self._top_k_row.set_title("Top K Results")
         self._top_k_row.set_value(float(self._config.top_k))
         models_group.add(self._top_k_row)
+
+        self._transformed_query_count_row = Adw.SpinRow.new_with_range(1, 8, 1)
+        self._transformed_query_count_row.set_title("Transformed Query Count")
+        self._transformed_query_count_row.set_value(
+            float(self._config.rag_transformed_query_count)
+        )
+        models_group.add(self._transformed_query_count_row)
 
         rag_page.add(llm_group)
         rag_page.add(models_group)
@@ -233,6 +241,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         new_embed_model = self._embed_model_row.get_text()
         new_llm_model = self._llm_model_row.get_text()
         new_top_k = int(self._top_k_row.get_value())
+        new_transformed_query_count = int(self._transformed_query_count_row.get_value())
         new_hybrid_search = self._hybrid_search_row.get_active()
         new_chunk_selection = self._chunk_selection_row.get_active()
 
@@ -244,6 +253,8 @@ class PreferencesWindow(Adw.PreferencesWindow):
             or new_embed_model != self._initial_values["embed_model"]
             or new_llm_model != self._initial_values["llm_model"]
             or new_top_k != self._initial_values["top_k"]
+            or new_transformed_query_count
+            != self._initial_values["rag_transformed_query_count"]
             or new_hybrid_search != self._initial_values["hybrid_search_enabled"]
             or new_chunk_selection != self._initial_values["chunk_selection_enabled"]
         )
@@ -255,6 +266,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self._config.set_embed_model(new_embed_model)
         self._config.set_llm_model(new_llm_model)
         self._config.set_top_k(new_top_k)
+        self._config.set_rag_transformed_query_count(new_transformed_query_count)
         self._config.set_hybrid_search_enabled(new_hybrid_search)
         self._config.set_chunk_selection_enabled(new_chunk_selection)
         self._config.save()

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from app.config import Config, LLMProvider
 
 
@@ -56,7 +58,50 @@ def test_migration_v2_to_v3(tmp_path: Path) -> None:
     assert config.chunk_selection_enabled is False
 
 
-def test_defaults_v2(tmp_path: Path) -> None:
+def test_migration_v3_to_v4_adds_transformed_query_count(tmp_path: Path) -> None:
+    config_file = tmp_path / "config.json"
+    v3_data = {
+        "version": 3,
+        "llm_provider": "ollama",
+        "llm_base_url": "http://localhost:11434",
+        "llm_api_key": "",
+        "embed_model": "embed-model",
+        "llm_model": "llm-model",
+        "top_k": 5,
+        "hybrid_search_enabled": True,
+        "chunk_selection_enabled": False,
+    }
+    config_file.write_text(json.dumps(v3_data), encoding="utf-8")
+
+    config = Config(config_path=config_file)
+
+    assert config.rag_transformed_query_count == 1
+
+
+def test_migration_v3_to_v4_malformed_transformed_query_count_falls_back(
+    tmp_path: Path,
+) -> None:
+    config_file = tmp_path / "config.json"
+    v3_data = {
+        "version": 3,
+        "llm_provider": "ollama",
+        "llm_base_url": "http://localhost:11434",
+        "llm_api_key": "",
+        "embed_model": "embed-model",
+        "llm_model": "llm-model",
+        "top_k": 5,
+        "hybrid_search_enabled": True,
+        "chunk_selection_enabled": False,
+        "rag_transformed_query_count": "not-a-number",
+    }
+    config_file.write_text(json.dumps(v3_data), encoding="utf-8")
+
+    config = Config(config_path=config_file)
+
+    assert config.rag_transformed_query_count == 1
+
+
+def test_defaults_v4(tmp_path: Path) -> None:
     """New Config on a nonexistent path should have correct defaults."""
     config_file = tmp_path / "nonexistent" / "config.json"
     config = Config(config_path=config_file)
@@ -69,6 +114,19 @@ def test_defaults_v2(tmp_path: Path) -> None:
     assert config.top_k >= 1
     assert config.hybrid_search_enabled is True
     assert config.chunk_selection_enabled is False
+    assert config.rag_transformed_query_count == 1
+
+
+def test_defaults_v4_malformed_env_transformed_query_count_falls_back(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RAG_TRANSFORMED_QUERY_COUNT", "nope")
+    config_file = tmp_path / "nonexistent" / "config.json"
+
+    config = Config(config_path=config_file)
+
+    assert config.rag_transformed_query_count == 1
 
 
 def test_set_and_save_llm_provider(tmp_path: Path) -> None:
@@ -103,3 +161,14 @@ def test_set_and_save_rag_features(tmp_path: Path) -> None:
     config2 = Config(config_path=config_file)
     assert config2.hybrid_search_enabled is False
     assert config2.chunk_selection_enabled is True
+
+
+def test_set_and_save_transformed_query_count(tmp_path: Path) -> None:
+    config_file = tmp_path / "config.json"
+    config = Config(config_path=config_file)
+
+    config.set_rag_transformed_query_count(99)
+    config.save()
+
+    config2 = Config(config_path=config_file)
+    assert config2.rag_transformed_query_count == 8

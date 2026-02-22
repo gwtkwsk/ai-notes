@@ -8,7 +8,15 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-_CONFIG_VERSION = 3
+_CONFIG_VERSION = 4
+
+
+def _clamp_transformed_query_count(value: Any) -> int:  # noqa: ANN401
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = 1
+    return max(1, min(8, parsed))
 
 
 def _default_config_path() -> Path:
@@ -54,12 +62,17 @@ class Config:
             data["hybrid_search_enabled"] = True
             data["chunk_selection_enabled"] = False
             data["version"] = 3
+        if data.get("version") == 3:
+            data["rag_transformed_query_count"] = _clamp_transformed_query_count(
+                data.get("rag_transformed_query_count", 1)
+            )
+            data["version"] = 4
         return data
 
     def _defaults(self) -> dict[str, Any]:
         """Return default configuration."""
         return {
-            "version": 3,
+            "version": 4,
             "llm_provider": LLMProvider.OLLAMA.value,
             "llm_base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
             "llm_api_key": "",
@@ -68,6 +81,9 @@ class Config:
             "top_k": int(os.getenv("RAG_TOP_K", "5")),
             "hybrid_search_enabled": True,
             "chunk_selection_enabled": False,
+            "rag_transformed_query_count": _clamp_transformed_query_count(
+                os.getenv("RAG_TRANSFORMED_QUERY_COUNT", "1")
+            ),
         }
 
     def save(self) -> None:
@@ -117,6 +133,12 @@ class Config:
     def chunk_selection_enabled(self) -> bool:
         return bool(self._data.get("chunk_selection_enabled", False))
 
+    @property
+    def rag_transformed_query_count(self) -> int:
+        return _clamp_transformed_query_count(
+            self._data.get("rag_transformed_query_count", 1)
+        )
+
     # -- Setters --
 
     def set_llm_provider(self, value: LLMProvider) -> None:
@@ -142,3 +164,8 @@ class Config:
 
     def set_chunk_selection_enabled(self, value: bool) -> None:
         self._data["chunk_selection_enabled"] = bool(value)
+
+    def set_rag_transformed_query_count(self, value: int) -> None:
+        self._data["rag_transformed_query_count"] = _clamp_transformed_query_count(
+            value
+        )

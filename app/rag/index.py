@@ -9,6 +9,7 @@ from app.data.repository import Repository
 from app.rag.config import CHUNK_MAX_CHARS, FUSION_OVERSAMPLE_FACTOR, TOP_K
 from app.rag.fusion import reciprocal_rank_fusion
 from app.rag.llm_client import LLMClient
+from app.rag.query_expander import QueryExpander
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +17,15 @@ _HEADING_SPLIT_RE = re.compile(r"(?=^#{1,6}\s)", re.MULTILINE)
 
 
 class RagIndex:
-    def __init__(self, repo: Repository, client: LLMClient) -> None:
+    def __init__(
+        self,
+        repo: Repository,
+        client: LLMClient,
+        query_expander: QueryExpander | None = None,
+    ) -> None:
         self._repo = repo
         self._client = client
+        self._query_expander = query_expander or QueryExpander(client)
 
     # -- vector serialisation ------------------------------------------------
 
@@ -157,37 +164,47 @@ class RagIndex:
         self,
         question: str,
         top_k: int = TOP_K,
-        use_hybrid: bool = True,
+        transformed_query_count: int = 1,
+        hybrid: bool | None = None,
+        use_hybrid: bool | None = None,
         status_cb: Callable[[str], None] | None = None,
     ) -> list[dict]:
-        logger.info(f"RAG query: '{question}' (top_k={top_k}, hybrid={use_hybrid})")
+        effective_hybrid = self._resolve_hybrid(hybrid, use_hybrid)
+
+        logger.info(
+            "RAG query: '%s' (top_k=%d, transformed_query_count=%d, hybrid=%s)",
+            question,
+            top_k,
+            transformed_query_count,
+            effective_hybrid,
+        )
         # Fetch more candidates per leg before fusion for better recall.
         fetch_k = top_k * FUSION_OVERSAMPLE_FACTOR
 
         if status_cb is not None:
-            status_cb("Embedding the question")
-        q_vec = self._client.embed(question)
-        if not q_vec:
-            logger.warning("Failed to generate embedding for question")
+            status_cb("Expanding the question")
+
+        expanded_questions = self._expand_questions(question, transformed_query_count)
+        if not expanded_questions:
             return []
-        logger.info(f"Question embedded successfully (dimension={len(q_vec)})")
 
         if status_cb is not None:
             status_cb("Searching notes")
-        query_blob = self._serialize_vector(q_vec)
 
-        vector_results = self._repo.search_notes_by_embedding(query_blob, fetch_k)
+        ranked_lists, chunk_query_blob = self._collect_ranked_lists(
+            expanded_questions,
+            fetch_k,
+            effective_hybrid,
+        )
 
-        if use_hybrid:
-            bm25_results = self._repo.search_notes_by_bm25(question, fetch_k)
-            logger.info(
-                f"Vector search: {len(vector_results)} results, "
-                f"BM25 search: {len(bm25_results)} results"
-            )
-            fused = reciprocal_rank_fusion([vector_results, bm25_results])
+        if not ranked_lists:
+            logger.warning("No retrieval legs succeeded for question")
+            return []
+
+        if len(ranked_lists) == 1:
+            fused = ranked_lists[0]
         else:
-            logger.info(f"Vector-only search: {len(vector_results)} results")
-            fused = vector_results
+            fused = reciprocal_rank_fusion(ranked_lists)
 
         results = fused[:top_k]
 
@@ -195,12 +212,7 @@ class RagIndex:
         # content with the nearest chunk text so the LLM receives a focused
         # chunk rather than a whole note.  Vector-search results already
         # have chunk text, but the lookup is cheap and keeps the logic uniform.
-        for result in results:
-            note_id = result.get("id")
-            if note_id is not None:
-                chunk_text = self._repo.get_best_chunk_text(note_id, query_blob)
-                if chunk_text is not None:
-                    result["content"] = chunk_text
+        self._hydrate_chunk_content(results, chunk_query_blob)
 
         logger.info(
             f"Hybrid search fused to {len(fused)} unique docs, returning {len(results)}"
@@ -217,6 +229,85 @@ class RagIndex:
         return results
 
     # -- helpers -------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_hybrid(
+        hybrid: bool | None,
+        use_hybrid: bool | None,
+    ) -> bool:
+        effective_hybrid = hybrid if hybrid is not None else True
+        if use_hybrid is not None:
+            return use_hybrid
+        return effective_hybrid
+
+    def _expand_questions(
+        self,
+        question: str,
+        transformed_query_count: int,
+    ) -> list[str]:
+        stripped_question = question.strip()
+        fallback = [stripped_question] if stripped_question else []
+        try:
+            expanded_questions = self._query_expander.expand(
+                question,
+                transformed_query_count,
+            )
+        except Exception:
+            logger.exception(
+                "Query expansion failed, falling back to original question"
+            )
+            return fallback
+
+        return expanded_questions or fallback
+
+    def _collect_ranked_lists(
+        self,
+        expanded_questions: list[str],
+        fetch_k: int,
+        effective_hybrid: bool,
+    ) -> tuple[list[list[dict]], bytes | None]:
+        ranked_lists: list[list[dict]] = []
+        chunk_query_blob: bytes | None = None
+
+        for expanded_question in expanded_questions:
+            q_vec = self._client.embed(expanded_question)
+            if not q_vec:
+                logger.warning(
+                    "Failed to generate embedding for transformed query: %s",
+                    expanded_question,
+                )
+                continue
+
+            query_blob = self._serialize_vector(q_vec)
+            if chunk_query_blob is None:
+                chunk_query_blob = query_blob
+
+            vector_results = self._repo.search_notes_by_embedding(query_blob, fetch_k)
+            ranked_lists.append(vector_results)
+
+            if effective_hybrid:
+                bm25_results = self._repo.search_notes_by_bm25(
+                    expanded_question,
+                    fetch_k,
+                )
+                ranked_lists.append(bm25_results)
+
+        return ranked_lists, chunk_query_blob
+
+    def _hydrate_chunk_content(
+        self,
+        results: list[dict],
+        chunk_query_blob: bytes | None,
+    ) -> None:
+        if chunk_query_blob is None:
+            return
+        for result in results:
+            note_id = result.get("id")
+            if note_id is None:
+                continue
+            chunk_text = self._repo.get_best_chunk_text(note_id, chunk_query_blob)
+            if chunk_text is not None:
+                result["content"] = chunk_text
 
     def _note_text(self, note: dict) -> str:
         title = note.get("title", "")

@@ -21,6 +21,8 @@ def build_graph(
     index: RagIndex,
     client: LLMClient,
     chunk_selector: ChunkSelector | None = None,
+    top_k: int = 5,
+    transformed_query_count: int = 1,
     use_hybrid: bool = True,
 ) -> object:
     """Build the RAG LangGraph pipeline.
@@ -40,7 +42,12 @@ def build_graph(
     graph = StateGraph(RagState)
 
     def retrieve(state: RagState) -> RagState:
-        contexts = index.query(state["question"], use_hybrid=use_hybrid)
+        contexts = index.query(
+            state["question"],
+            top_k=top_k,
+            transformed_query_count=transformed_query_count,
+            hybrid=use_hybrid,
+        )
         return {"question": state["question"], "contexts": contexts}
 
     def generate(state: RagState) -> RagState:
