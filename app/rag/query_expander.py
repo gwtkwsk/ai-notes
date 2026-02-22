@@ -34,17 +34,29 @@ class QueryExpander:
             f"Question: {base_query}\n"
             f"Return up to {capped_count - 1} alternatives, one per line, no prose."
         )
+        logger.debug(
+            "Expanding query (target_count=%d): '%s'",
+            capped_count,
+            base_query,
+        )
         try:
             raw = self._client.generate(prompt)
         except Exception:
             logger.exception("Query expansion failed, falling back to original query")
             return [base_query]
 
+        logger.debug("Raw expansion response: %r", raw[:500] if raw else "(empty)")
         parsed = self._parse_output(raw)
         deduped = self._dedupe_stable([base_query, *parsed])
         if not deduped:
             return [base_query]
-        return deduped[:capped_count]
+        result = deduped[:capped_count]
+        logger.debug(
+            "Expanded to %d queries: %s",
+            len(result),
+            ", ".join(f"'{q}'" for q in result),
+        )
+        return result
 
     @staticmethod
     def _normalize_query(value: str) -> str:

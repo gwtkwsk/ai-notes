@@ -186,7 +186,15 @@ class RagIndex:
 
         expanded_questions = self._expand_questions(question, transformed_query_count)
         if not expanded_questions:
+            logger.warning("Query expansion produced no queries; aborting retrieval")
             return []
+
+        logger.info(
+            "Retrieval plan: %d query leg(s), fetch_k=%d, hybrid=%s",
+            len(expanded_questions),
+            fetch_k,
+            effective_hybrid,
+        )
 
         if status_cb is not None:
             status_cb("Searching notes")
@@ -201,6 +209,10 @@ class RagIndex:
             logger.warning("No retrieval legs succeeded for question")
             return []
 
+        logger.info(
+            "Fusing %d ranked list(s) via RRF",
+            len(ranked_lists),
+        )
         if len(ranked_lists) == 1:
             fused = ranked_lists[0]
         else:
@@ -215,17 +227,20 @@ class RagIndex:
         self._hydrate_chunk_content(results, chunk_query_blob)
 
         logger.info(
-            f"Hybrid search fused to {len(fused)} unique docs, returning {len(results)}"
+            "RRF merged to %d unique docs; returning top %d",
+            len(fused),
+            len(results),
         )
-        if results:
-            for i, res in enumerate(results[:3]):
-                score = res.get("rrf_score")
-                score_str = f"{score:.4f}" if isinstance(score, float) else "N/A"
-                logger.debug(
-                    f"  Result {i + 1}: id={res.get('id')}, "
-                    f"title='{res.get('title', '')[:50]}', "
-                    f"rrf_score={score_str}"
-                )
+        for i, res in enumerate(results):
+            score = res.get("rrf_score")
+            score_str = f"{score:.4f}" if isinstance(score, float) else "N/A"
+            logger.debug(
+                "  [%d] id=%-4s  rrf=%-8s  title='%s'",
+                i + 1,
+                res.get("id"),
+                score_str,
+                res.get("title", "")[:60],
+            )
         return results
 
     # -- helpers -------------------------------------------------------------
@@ -258,7 +273,19 @@ class RagIndex:
             )
             return fallback
 
-        return expanded_questions or fallback
+        if not expanded_questions:
+            logger.debug("Expander returned empty list; using original question as-is")
+            return fallback
+
+        if len(expanded_questions) == 1 and expanded_questions[0] == stripped_question:
+            logger.debug("Query expansion skipped (count=1); using original question")
+        else:
+            logger.info(
+                "Query expanded to %d variant(s): %s",
+                len(expanded_questions),
+                " | ".join(f"'{q}'" for q in expanded_questions),
+            )
+        return expanded_questions
 
     def _collect_ranked_lists(
         self,
@@ -269,26 +296,52 @@ class RagIndex:
         ranked_lists: list[list[dict]] = []
         chunk_query_blob: bytes | None = None
 
-        for expanded_question in expanded_questions:
+        for leg_idx, expanded_question in enumerate(expanded_questions, start=1):
+            logger.debug(
+                "Leg %d/%d: embedding '%s'",
+                leg_idx,
+                len(expanded_questions),
+                expanded_question,
+            )
             q_vec = self._client.embed(expanded_question)
             if not q_vec:
                 logger.warning(
-                    "Failed to generate embedding for transformed query: %s",
+                    "Leg %d/%d: embedding failed, skipping leg — query='%s'",
+                    leg_idx,
+                    len(expanded_questions),
                     expanded_question,
                 )
                 continue
 
+            logger.debug(
+                "Leg %d/%d: embedding dimension=%d",
+                leg_idx,
+                len(expanded_questions),
+                len(q_vec),
+            )
             query_blob = self._serialize_vector(q_vec)
             if chunk_query_blob is None:
                 chunk_query_blob = query_blob
 
             vector_results = self._repo.search_notes_by_embedding(query_blob, fetch_k)
+            logger.debug(
+                "Leg %d/%d: vector search returned %d result(s)",
+                leg_idx,
+                len(expanded_questions),
+                len(vector_results),
+            )
             ranked_lists.append(vector_results)
 
             if effective_hybrid:
                 bm25_results = self._repo.search_notes_by_bm25(
                     expanded_question,
                     fetch_k,
+                )
+                logger.debug(
+                    "Leg %d/%d: BM25 search returned %d result(s)",
+                    leg_idx,
+                    len(expanded_questions),
+                    len(bm25_results),
                 )
                 ranked_lists.append(bm25_results)
 

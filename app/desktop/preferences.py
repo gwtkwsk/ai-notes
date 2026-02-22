@@ -125,13 +125,6 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self._top_k_row.set_value(float(self._config.top_k))
         models_group.add(self._top_k_row)
 
-        self._transformed_query_count_row = Adw.SpinRow.new_with_range(1, 8, 1)
-        self._transformed_query_count_row.set_title("Transformed Query Count")
-        self._transformed_query_count_row.set_value(
-            float(self._config.rag_transformed_query_count)
-        )
-        models_group.add(self._transformed_query_count_row)
-
         rag_page.add(llm_group)
         rag_page.add(models_group)
 
@@ -157,6 +150,16 @@ class PreferencesWindow(Adw.PreferencesWindow):
         )
         self._chunk_selection_row.set_active(config.chunk_selection_enabled)
         features_group.add(self._chunk_selection_row)
+
+        self._transformed_query_count_row = Adw.SpinRow.new_with_range(1, 8, 1)
+        self._transformed_query_count_row.set_title("Transformed Query Count")
+        self._transformed_query_count_row.set_subtitle(
+            "Number of LLM-rewritten variants of each question searched in parallel"
+        )
+        self._transformed_query_count_row.set_value(
+            float(self._config.rag_transformed_query_count)
+        )
+        features_group.add(self._transformed_query_count_row)
 
         rag_page.add(features_group)
         self.add(rag_page)

@@ -89,7 +89,15 @@ class RagService:
         cancel_cb: Callable[[], bool] | None = None,
         status_cb: Callable[[str], None] | None = None,
     ) -> Iterator[dict]:
-        logger.info(f"RAG query started: '{question}'")
+        logger.info("RAG query started: '%s'", question)
+        logger.debug(
+            "RAG config — top_k=%d, transformed_query_count=%d, "
+            "hybrid=%s, chunk_selection=%s",
+            self._config.top_k,
+            self._config.rag_transformed_query_count,
+            self._config.hybrid_search_enabled,
+            self._chunk_selector is not None,
+        )
         contexts = self._index.query(
             question,
             top_k=self._config.top_k,
@@ -97,21 +105,41 @@ class RagService:
             hybrid=self._config.hybrid_search_enabled,
             status_cb=status_cb,
         )
-        logger.info(f"Retrieved {len(contexts)} context documents")
+        logger.info("Retrieved %d context document(s)", len(contexts))
+        for i, ctx in enumerate(contexts):
+            score = ctx.get("rrf_score")
+            score_str = f"{score:.4f}" if isinstance(score, float) else "N/A"
+            logger.debug(
+                "  Context [%d] id=%-4s  rrf=%-8s  title='%s'",
+                i + 1,
+                ctx.get("id"),
+                score_str,
+                ctx.get("title", "")[:60],
+            )
 
         if self._chunk_selector is not None:
             if status_cb is not None:
                 status_cb("Evaluating chunk relevance…")
+            logger.info("Running chunk selection on %d candidate(s)", len(contexts))
             contexts = self._chunk_selector.select(contexts, question)
-            logger.info(f"After chunk selection: {len(contexts)} relevant chunks")
+            logger.info("Chunk selection kept %d relevant chunk(s)", len(contexts))
 
         system, user_prompt = build_prompt(format_contexts(contexts), question)
-        logger.debug(f"System message: {system}")
-        logger.debug(f"User prompt (first 300 chars): {user_prompt[:300]}...")
+        logger.debug("System prompt (%d chars): %s", len(system), system)
+        logger.debug(
+            "User prompt (%d chars, first 400): %s",
+            len(user_prompt),
+            user_prompt[:400],
+        )
 
         sources = [
             {"id": int(c["id"]), "title": c.get("title", "Untitled")} for c in contexts
         ]
+        logger.info(
+            "Sources selected (%d): %s",
+            len(sources),
+            ", ".join(f"'{s['title']}'" for s in sources) or "(none)",
+        )
         if status_cb is not None:
             status_cb("Generating answer…")
         for chunk in self._client.generate_stream(user_prompt, system=system):
@@ -131,7 +159,7 @@ class RagService:
                 "done": False,
             }
 
-        logger.info("RAG query completed successfully")
+        logger.info("RAG query completed successfully — answer streamed")
         yield {
             "answer_delta": "",
             "thinking_delta": "",
