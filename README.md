@@ -141,6 +141,20 @@ vagrant destroy -f
 
 Notes:
 
-- The box used is `cloud-image/fedora-43`, and this setup is intended to be used with the libvirt provider
+- The Vagrantfile uses the official Fedora Cloud Base 43 libvirt box from Fedora downloads via `config.vm.box_url`
+- If Fedora republishes the box under a newer point release, override it with `VAGRANT_FEDORA_BOX_URL=... vagrant up --provider=libvirt`
 - This setup is intended mainly for command-line development and testing
 - It is not meant to be the primary way to run the GNOME desktop app UI inside the VM
+
+### Using GitHub Copilot CLI inside the VM
+
+The `Vagrantfile` supports routing Copilot CLI traffic through a host-side
+mitmproxy so that the real GitHub token never leaves the host.  The proxy
+intercepts requests from the VM and injects the real token (retrieved from
+GNOME Keyring) transparently.  The VM only stores a harmless placeholder token
+and trusts the mitmproxy CA certificate.
+
+See **[docs/vagrant-copilot-proxy.md](docs/vagrant-copilot-proxy.md)** for
+the full setup guide, including GNOME Keyring configuration, the mitmproxy
+injection script template, all supported environment variables, and a manual
+validation flow.
