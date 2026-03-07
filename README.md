@@ -107,3 +107,40 @@ uv run --group dev ruff check
 uv run --group dev ruff format
 uv run --group dev pyright
 ```
+
+## Optional: Vagrant on Fedora Workstation 43
+
+If you want a disposable CLI/dev VM, this repository includes a simple `Vagrantfile` for Fedora Cloud Base 43 using libvirt/KVM.
+
+Fedora Workstation 43 setup:
+
+```bash
+sudo dnf install -y @virtualization vagrant vagrant-libvirt
+sudo systemctl enable --now libvirtd
+sudo usermod -aG libvirt "$USER"
+newgrp libvirt
+sudo virsh net-start default || true
+sudo virsh net-autostart default
+```
+
+Verify the plugin and provider are available:
+
+```bash
+vagrant plugin list | grep vagrant-libvirt
+virsh uri
+```
+
+Basic usage:
+
+```bash
+vagrant up --provider=libvirt
+vagrant ssh
+vagrant halt
+vagrant destroy -f
+```
+
+Notes:
+
+- The box used is `cloud-image/fedora-43`, and this setup is intended to be used with the libvirt provider
+- This setup is intended mainly for command-line development and testing
+- It is not meant to be the primary way to run the GNOME desktop app UI inside the VM
