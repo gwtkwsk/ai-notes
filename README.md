@@ -141,8 +141,7 @@ vagrant destroy -f
 
 Notes:
 
-- The Vagrantfile uses the official Fedora Cloud Base 43 libvirt box from Fedora downloads via `config.vm.box_url`
-- If Fedora republishes the box under a newer point release, override it with `VAGRANT_FEDORA_BOX_URL=... vagrant up --provider=libvirt`
+- The Vagrantfile uses the official Fedora Cloud Base 43 libvirt box (hardcoded)
 - This setup is intended mainly for command-line development and testing
 - It is not meant to be the primary way to run the GNOME desktop app UI inside the VM
 

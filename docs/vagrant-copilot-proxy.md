@@ -6,6 +6,16 @@ placeholder token and trusts the mitmproxy CA so TLS works transparently.
 
 ---
 
+## Architecture
+
+- The host stores the real GitHub token in GNOME Keyring.
+- `mitmdump` runs on the host and injects the real `Authorization: Bearer`
+  header for Copilot/GitHub API requests.
+- The VM only receives proxy environment variables, a placeholder token, and
+  the mitmproxy CA certificate provisioned by the `Vagrantfile`.
+
+---
+
 ## Prerequisites
 
 - Fedora Workstation 43 host with GNOME Keyring
@@ -22,6 +32,11 @@ placeholder token and trusts the mitmproxy CA so TLS works transparently.
 
 ## Setup
 
+Keep the actual proxy addon in `~/.local/share/copilot-proxy/` so it stays
+outside the repo and outside the VM's shared `/vagrant` folder. The local
+README in that directory is for day-2 maintenance of the host-only files; the
+steps below remain the canonical bootstrap for this Vagrant workflow.
+
 ### 1. Generate the mitmproxy CA
 
 ```bash
@@ -30,49 +45,30 @@ uvx --from mitmproxy mitmproxy   # Ctrl-C immediately after it starts
 
 The CA is written to `~/.mitmproxy/mitmproxy-ca-cert.pem`.
 
-### 2. Create the token-injection script
-
-Save this **outside the repo** (e.g. `~/.local/share/copilot-proxy/inject_token.py`)
-so the token never touches the VM's shared `/vagrant` folder:
+### 2. Ensure the host-local proxy directory exists
 
 ```bash
 mkdir -p ~/.local/share/copilot-proxy
 ```
 
-```python
-import os
-
-import keyring
-from mitmproxy import http
-
-KEYRING_SERVICE = "github-copilot-proxy"
-KEYRING_ACCOUNT = os.environ.get("COPILOT_KEYRING_ACCOUNT", "<your-gh-username>")
-REAL_TOKEN = keyring.get_password(KEYRING_SERVICE, KEYRING_ACCOUNT)
-AUTH_HOSTS = {
-    "api.github.com",
-    "api.individual.githubcopilot.com",
-    "copilot-proxy.githubusercontent.com",
-}
-
-if not REAL_TOKEN:
-    raise RuntimeError(
-        f"No token found in keyring service={KEYRING_SERVICE!r} account={KEYRING_ACCOUNT!r}"
-    )
-
-
-def request(flow: http.HTTPFlow) -> None:
-    if flow.request.pretty_host in AUTH_HOSTS:
-        flow.request.headers["Authorization"] = f"Bearer {REAL_TOKEN}"
-```
+`~/.local/share/copilot-proxy/inject_token.py` is the host-local mitmproxy
+addon that reads `COPILOT_KEYRING_ACCOUNT`, fetches the real token from the
+`github-copilot-proxy` keyring service, and injects it for the Copilot/GitHub
+API hosts listed in `AUTH_HOSTS`.
 
 ### 3. Start mitmproxy (host terminal)
 
 ```bash
-uvx --with keyring --from mitmproxy mitmdump \
+COPILOT_KEYRING_ACCOUNT=<your-gh-username> \
+  uvx --with keyring --from mitmproxy mitmdump \
   --listen-host "${VAGRANT_PROXY_HOST:-192.168.122.1}" \
-  --listen-port "${VAGRANT_PROXY_PORT:-8080}" \
+  --listen-port 8080 \
   -s ~/.local/share/copilot-proxy/inject_token.py
 ```
+
+The local `~/.local/share/copilot-proxy/README.md` should stay focused on
+maintaining that host-only directory (for example, startup convenience notes or
+updating `AUTH_HOSTS` when Copilot adds new endpoints).
 
 ### 4. Start the VM
 
@@ -94,14 +90,12 @@ copilot   # placeholder token + proxy are pre-configured
 
 ## Vagrantfile environment variables
 
-All are optional; defaults are shown.
+Two optional overrides are supported; all other values are hardcoded.
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `VAGRANT_PROXY_HOST` | `192.168.122.1` | IP mitmproxy listens on (host side) |
-| `VAGRANT_PROXY_PORT` | `8080` | Port mitmproxy listens on |
 | `VAGRANT_MITM_CA` | `~/.mitmproxy/mitmproxy-ca-cert.pem` | Host path to mitmproxy CA cert |
-| `VAGRANT_COPILOT_TOKEN` | `ghu_placeholder` | Fake token stored in the VM |
 
 If the CA file is absent at provision time, the CA step is skipped. Re-run
 after generating the cert:

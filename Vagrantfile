@@ -1,42 +1,20 @@
 require "shellwords"
 
-################################################################
-# Host-configurable values (all have safe defaults)
-#
-#   VAGRANT_PROXY_HOST   - libvirt gateway seen from the VM
-#                          default: 192.168.122.1
-#   VAGRANT_PROXY_PORT   - mitmproxy listen port on the host
-#                          default: 8080
-#   VAGRANT_MITM_CA      - absolute path to the mitmproxy CA cert
-#                          on the HOST filesystem
-#                          default: ~/.mitmproxy/mitmproxy-ca-cert.pem
-#   VAGRANT_FEDORA_BOX   - local Vagrant box name
-#                          default: fedora/43-cloud-base
-#   VAGRANT_FEDORA_BOX_URL - official Fedora Cloud Base libvirt box URL
-#                          default: Fedora 43 Cloud Base libvirt box
-#   VAGRANT_COPILOT_TOKEN - placeholder token stored inside the VM;
-#                          the real token is injected by the host proxy
-#                          default: ghu_placeholder
-################################################################
+# Optional overrides:
+#   VAGRANT_PROXY_HOST  - libvirt gateway IP mitmproxy listens on (default: 192.168.122.1)
+#   VAGRANT_MITM_CA     - host path to the mitmproxy CA cert
+#                         (default: ~/.mitmproxy/mitmproxy-ca-cert.pem)
 
-FEDORA_BOX = ENV.fetch("VAGRANT_FEDORA_BOX", "fedora/43-cloud-base")
-FEDORA_BOX_URL = ENV.fetch(
-  "VAGRANT_FEDORA_BOX_URL",
-  "https://download.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/" \
-  "Fedora-Cloud-Base-Vagrant-libvirt-43-1.6.x86_64.vagrant.libvirt.box"
-)
-PROXY_HOST  = ENV.fetch("VAGRANT_PROXY_HOST",  "192.168.122.1")
-PROXY_PORT  = ENV.fetch("VAGRANT_PROXY_PORT",  "8080")
-PROXY_URL   = "http://#{PROXY_HOST}:#{PROXY_PORT}"
-MITM_CA     = ENV.fetch("VAGRANT_MITM_CA",
-                File.expand_path("~/.mitmproxy/mitmproxy-ca-cert.pem"))
-COPILOT_TOK = ENV.fetch("VAGRANT_COPILOT_TOKEN", "ghu_placeholder")
+PROXY_HOST      = ENV.fetch("VAGRANT_PROXY_HOST", "192.168.122.1")
+PROXY_URL       = "http://#{PROXY_HOST}:8080"
+MITM_CA         = ENV.fetch("VAGRANT_MITM_CA",
+                    File.expand_path("~/.mitmproxy/mitmproxy-ca-cert.pem"))
 SHELL_PROXY_URL = Shellwords.escape(PROXY_URL)
-SHELL_COPILOT_TOK = Shellwords.escape(COPILOT_TOK)
 
 Vagrant.configure("2") do |config|
-  config.vm.box = FEDORA_BOX
-  config.vm.box_url = FEDORA_BOX_URL
+  config.vm.box     = "fedora/43-cloud-base"
+  config.vm.box_url = "https://download.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/" \
+                      "Fedora-Cloud-Base-Vagrant-libvirt-43-1.6.x86_64.vagrant.libvirt.box"
   config.vm.hostname = "ai-notes-fedora43"
 
   config.vm.provider :libvirt do |libvirt|
@@ -97,9 +75,9 @@ export ALL_PROXY=#{SHELL_PROXY_URL}
 export NO_PROXY=localhost,127.0.0.1,::1
 
 # Placeholder token; the real token is injected by the host mitmproxy.
-export COPILOT_GITHUB_TOKEN=#{SHELL_COPILOT_TOK}
-export GH_TOKEN=#{SHELL_COPILOT_TOK}
-export GITHUB_TOKEN=#{SHELL_COPILOT_TOK}
+export COPILOT_GITHUB_TOKEN=ghu_placeholder
+export GH_TOKEN=ghu_placeholder
+export GITHUB_TOKEN=ghu_placeholder
 EOF
       chmod 644 /etc/profile.d/copilot-proxy.sh
       echo "Proxy environment written to /etc/profile.d/copilot-proxy.sh"
