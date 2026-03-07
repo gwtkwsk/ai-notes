@@ -20,7 +20,6 @@ __pycache__/
 dist/
 build/
 *.egg-info/
-.vagrant/
 
 # Python tooling caches
 .mypy_cache/
