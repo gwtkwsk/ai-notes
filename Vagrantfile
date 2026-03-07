@@ -1,3 +1,5 @@
+require "shellwords"
+
 ################################################################
 # Host-configurable values (all have safe defaults)
 #
@@ -29,6 +31,8 @@ PROXY_URL   = "http://#{PROXY_HOST}:#{PROXY_PORT}"
 MITM_CA     = ENV.fetch("VAGRANT_MITM_CA",
                 File.expand_path("~/.mitmproxy/mitmproxy-ca-cert.pem"))
 COPILOT_TOK = ENV.fetch("VAGRANT_COPILOT_TOKEN", "ghu_placeholder")
+SHELL_PROXY_URL = Shellwords.escape(PROXY_URL)
+SHELL_COPILOT_TOK = Shellwords.escape(COPILOT_TOK)
 
 Vagrant.configure("2") do |config|
   config.vm.box = FEDORA_BOX
@@ -53,12 +57,24 @@ Vagrant.configure("2") do |config|
       name: "install-mitmproxy-ca",
       inline: <<~SHELL
         set -euo pipefail
-        if [ ! -f /tmp/mitmproxy-ca-cert.pem ]; then
-          echo "mitmproxy CA file provisioning failed: /tmp/mitmproxy-ca-cert.pem is missing." >&2
+        SRC=/tmp/mitmproxy-ca-cert.pem
+        DEST=/etc/pki/ca-trust/source/anchors/mitmproxy-ca-cert.pem
+
+        if [ ! -f "$SRC" ]; then
+          if [ -f "$DEST" ]; then
+            echo "Source absent but CA already installed; skipping."
+            exit 0
+          fi
+          echo "mitmproxy CA file not found at $SRC." >&2
           exit 1
         fi
-        cp /tmp/mitmproxy-ca-cert.pem \
-           /etc/pki/ca-trust/source/anchors/mitmproxy-ca-cert.pem
+
+        if [ -f "$DEST" ] && cmp -s "$SRC" "$DEST"; then
+          echo "mitmproxy CA already up to date; skipping."
+          exit 0
+        fi
+
+        cp "$SRC" "$DEST"
         update-ca-trust extract
         echo "mitmproxy CA installed into system trust store."
       SHELL
@@ -71,23 +87,19 @@ Vagrant.configure("2") do |config|
   # login shell (ssh, vagrant ssh, sudo -i, etc.).
   config.vm.provision "shell",
     name: "configure-proxy-env",
-    env: {
-      "PROXY_URL"   => PROXY_URL,
-      "COPILOT_TOK" => COPILOT_TOK,
-    },
     inline: <<~SHELL
       set -euo pipefail
-      cat > /etc/profile.d/copilot-proxy.sh << EOF
+      cat > /etc/profile.d/copilot-proxy.sh <<'EOF'
 # Injected by Vagrantfile - copilot-via-mitmproxy setup
-export HTTP_PROXY="${PROXY_URL}"
-export HTTPS_PROXY="${PROXY_URL}"
-export ALL_PROXY="${PROXY_URL}"
-export NO_PROXY="localhost,127.0.0.1,::1"
+export HTTP_PROXY=#{SHELL_PROXY_URL}
+export HTTPS_PROXY=#{SHELL_PROXY_URL}
+export ALL_PROXY=#{SHELL_PROXY_URL}
+export NO_PROXY=localhost,127.0.0.1,::1
 
 # Placeholder token; the real token is injected by the host mitmproxy.
-export COPILOT_GITHUB_TOKEN="${COPILOT_TOK}"
-export GH_TOKEN="${COPILOT_TOK}"
-export GITHUB_TOKEN="${COPILOT_TOK}"
+export COPILOT_GITHUB_TOKEN=#{SHELL_COPILOT_TOK}
+export GH_TOKEN=#{SHELL_COPILOT_TOK}
+export GITHUB_TOKEN=#{SHELL_COPILOT_TOK}
 EOF
       chmod 644 /etc/profile.d/copilot-proxy.sh
       echo "Proxy environment written to /etc/profile.d/copilot-proxy.sh"
